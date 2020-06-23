@@ -109,7 +109,7 @@ class CollectExecutionCallsContext:
             )
             self.invoke_error = getattr(parent, on_error)
 
-        else:
+        elif on_error is not None:
             assert callable(on_error), ValueError("On error must be a callable or a string")
             self.invoke_error = on_error
 
