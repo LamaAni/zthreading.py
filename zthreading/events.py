@@ -15,7 +15,13 @@ class Event:
         self.kwargs = kwargs
 
 
-def get_active_loop():
+def get_active_loop() -> asyncio.AbstractEventLoop:
+    """returns the current active asyncio loop or creates 
+    a new one.
+
+    Returns:
+        asyncio.AbstractEventLoop
+    """
     loop = asyncio.events._get_running_loop()
     loop = asyncio.new_event_loop() if loop is None else loop
     return loop
