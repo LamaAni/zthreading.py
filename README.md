@@ -114,6 +114,26 @@ for ev in task.stream("test"):
     print(f"{ev.name}, {ev.args[0]}")
 ```
 
+# Install
+
+```shell
+pip install zthreading
+```
+
+## From the git repo directly
+
+To install from master branch,
+
+```shell
+pip install git+https://github.com/LamaAni/zthreading.py.git@master
+```
+
+To install from a release (tag)
+
+```shell
+pip install git+https://github.com/LamaAni/zthreading.py.git@[tag]
+```
+
 # Contribution
 
 Feel free to ping me in issues or directly on LinkedIn to contribute.
