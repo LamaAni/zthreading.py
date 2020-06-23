@@ -1,9 +1,8 @@
 import pytest
 import time
 import asyncio
-from src.operations import tasks
-from src.operations.tasks import Task
-from src.operations.tests import UnitException
+from zthreading import tasks
+from zthreading.tasks import Task
 from concurrent.futures import TimeoutError
 
 tasks.Task.THROW_INTERNAL_EXCEPTIONS_DEFAULT = False
@@ -104,11 +103,15 @@ def test_return_value_using_asyncio():
     assert Task(return_something, use_async_loop=True).start().join() == "test"
 
 
+def raise_task_exception():
+    raise DummyTestError("exception from " + tasks.Task.get_thread_description())
+
+
 def test_common_threaded_task_with_join_exception():
     """Test for thread exception with join.
     """
-    with pytest.raises(UnitException):
-        task = tasks.Task(lambda: UnitException.raise_with_msg("exception from " + tasks.Task.get_thread_description()))
+    with pytest.raises(DummyTestError):
+        task = tasks.Task(raise_task_exception)
         task.start()
         task.join()
 

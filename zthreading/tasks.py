@@ -81,12 +81,11 @@ class Task(EventHandler):
         self._completed_at = None
         self._action_result = None
         self._error = None
-        self._thread_name = thread_name or self.generate_random_thread_name()
+        self._thread_name = thread_name or self._generate_thread_name()
         self._event_name = event_name
 
-    @classmethod
-    def generate_random_thread_name(cls):
-        return f"{cls.__name__}-{random_string(8)}"
+    def _generate_thread_name(self):
+        return f"{self.__class__.__name__}-{id(self)}"
 
     @property
     def use_async_loop(self) -> bool:

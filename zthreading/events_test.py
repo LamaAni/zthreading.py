@@ -2,8 +2,8 @@ import pytest
 import asyncio
 import threading
 import time
-from src.operations import events
-from src.operations.tasks import Task
+from zthreading import events
+from zthreading.tasks import Task
 
 
 def test_event_handler_event():
