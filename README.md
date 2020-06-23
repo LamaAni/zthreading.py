@@ -70,10 +70,10 @@ Note: The task object is an EventHandler and has all the capabilities of one.
 
 (Examples in code)
 
-1. wait_for_all (tasks.... )
-1. wait_for_some (tasks... )
-1. wait_for_one (tasks...)
-1. wait_for_events(tasks, event names....)
+1. Task.wait_for_all (tasks.... )
+1. Task.wait_for_some (tasks... )
+1. Task.wait_for_one (tasks...)
+1. Task.wait_for_events(tasks, event names....)
 
 ## Piping events
 
