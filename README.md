@@ -57,9 +57,23 @@ for i in range(1, 20):
     consecutive_calls_action()
 ```
 
+# Environment variables
+
+1. TASKS_DEFAULT_TO_ASYNC_LOOP - If set to "true", will default all tasks to use asyncio.
+1. TASKS_ERROR_EVENT_NAME - The name of the error event, emitted on any task errors. Defaults to "error".
+
 # Advanced Methods and capabilities
 
 Note: The task object is an EventHandler and has all the capabilities of one.
+
+## Task wait functions (staticmethod)
+
+(Examples in code)
+
+1. wait_for_all (tasks.... )
+1. wait_for_some (tasks... )
+1. wait_for_one (tasks...)
+1. wait_for_events(tasks, event names....)
 
 ## Piping events
 
