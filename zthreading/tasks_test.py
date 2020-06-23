@@ -1,7 +1,7 @@
 import pytest
 import time
 import asyncio
-from zthreading import tasks
+from zthreading import tasks, decorators
 from zthreading.tasks import Task
 from concurrent.futures import TimeoutError
 
@@ -123,7 +123,7 @@ class dummytester:
         self.throw_error = throw_error
         self.last_error = None
 
-    @tasks.collect_consecutive_calls_async("async_error")
+    @decorators.collect_consecutive_calls_async("async_error")
     def collected(self):
         time.sleep(0.01)
         if self.throw_error:

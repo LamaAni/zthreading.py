@@ -1,24 +1,35 @@
 import os
 import threading
 import asyncio
-import inspect
-from weakref import WeakKeyDictionary
 
 from datetime import datetime
 from queue import SimpleQueue, Empty
 from typing import List, Callable
-from functools import wraps
 
 from zthreading.events import EventHandler, get_active_loop
 
 
 def abort_executing_thread(thread: threading.Thread):
+    """Abort the thread execution.
+
+    Args:
+        thread (threading.Thread): The thread to abort.
+    """
     # FIXME: Not recommended since _stop might be removed.
     thread._reset_internal_locks(False)
     thread._stop()
 
 
 def wait_for_future(future: asyncio.Future, timeout: float = None):
+    """Waits for anon asyncio future. Helper method.
+
+    Args:
+        future (asyncio.Future): The future to wait for.
+        timeout (float, optional): The wait timeout. Defaults to None.
+
+    Returns:
+        any: The future result.
+    """
     if asyncio.iscoroutine(future):
         loop = get_active_loop()
         future = loop.create_task(future)
@@ -38,11 +49,15 @@ def wait_for_future(future: asyncio.Future, timeout: float = None):
 
 
 class TaskOperationException(Exception):
+    """A general class for task operation errors.
+    """
+
     pass
 
 
 class Task(EventHandler):
     TASKS_DEFAULT_TO_ASYNC_LOOP: bool = os.environ.get("TASKS_DEFAULT_TO_ASYNC_LOOP", "").lower().strip() == "true"
+    TASKS_ERROR_EVENT_NAME: str = os.environ.get("TASKS_ERROR_EVENT_NAME", "error")
 
     def __init__(
         self,
@@ -53,24 +68,25 @@ class Task(EventHandler):
         event_name: str = "done",
     ):
         """Implements a multi approach action executor that allows for
-        both a system thread or an async/await mode.
-
-        Note: This object can execute a coroutine in a different thread, and will do so if
-        use_async_loop is False.
+        both a system thread or an asyncio thread (async/await calls).
 
         Args:
             action (Callable): The action to execute.
-            use_async_loop (bool, optional): If true use an async method to execute the action. Defaults to
-                the environment variable TASKS_DEFAULT_TO_ASYNC_LOOP, or false.
-            use_daemon_thread (bool, optional): If true, and is using threading, starts the task in daemon mode.
+            use_async_loop (bool, optional): If true use an asyncio thread to execute the action otherwise uses 
+                the a system thread. Defaults to the environment variable TASKS_DEFAULT_TO_ASYNC_LOOP, or false.
+            use_daemon_thread (bool, optional): If true, and is using system threading, starts the task in daemon mode.
                 Defaults to True.
             thread_name (str, optional): If using threads, the name of the executing thread.
-                Defaults to a random string.
-            event_name (str, optional): The name of the event to trigger when the task is done.
+                Defaults to a an auto generated name.
+            event_name (str, optional): The name of the event to trigger when the task is done. Defaults to "done",
+                if none, no event will be triggered.
 
         Events:
             [event_name] - when the task is done. (Args: [])
-            "error" - when the task errors. (Args: [error:Exception])
+            "error" or env {TASKS_ERROR_EVENT_NAME} - when the task errors. (Args: [error:Exception])
+
+        Note: This object can execute a coroutine in a different thread, and will do so if
+            use_async_loop is False.
         """
         super().__init__()
         self.action = action
@@ -89,14 +105,18 @@ class Task(EventHandler):
 
     @property
     def use_async_loop(self) -> bool:
+        """If true uses asyncio to execute threads.
+        """
         return self._use_async_loop
 
     @property
     def async_task(self):
+        """The asyncio current executing task or None."""
         return self._async_loop_task
 
     @property
     def is_running(self) -> bool:
+        """If true is currently running"""
         if self.use_async_loop:
             return self._async_loop_task is not None and not self._async_loop_task.done()
         else:
@@ -104,25 +124,31 @@ class Task(EventHandler):
 
     @property
     def is_done(self) -> bool:
+        """If true was executed successfully"""
         return self._completed_at is not None
 
     @property
     def completed_at(self) -> datetime:
+        """Timestamp of the last successful execution."""
         return self._completed_at
 
     @property
     def result(self):
+        """The result of the last execution"""
         return self._action_result
 
     @property
     def error(self) -> Exception:
+        """The last execution error"""
         return self._error
 
     @property
     def event_name(self) -> str:
+        """The name of the event to invoke once the thread executes successfully"""
         return self._event_name
 
     def is_current_thread(self):
+        """Returns true (in system threading) if the current thread is the executing thread"""
         return self._thread.ident == threading.current_thread().ident
 
     async def _run_as_async(self, args, kwargs):
@@ -149,7 +175,8 @@ class Task(EventHandler):
             if asyncio.iscoroutine(rslt):
                 rslt = wait_for_future(rslt)
             self._action_result = rslt
-            self.emit(self.event_name)
+            if self.event_name is not None:
+                self.emit(self.event_name)
         except Exception as ex:
             self._error = ex
             self.emit("error", self, ex)
@@ -281,8 +308,22 @@ class Task(EventHandler):
 
     @staticmethod
     def wait_for_events(
-        predict, tasks: List["Task"], raise_errors: bool = True, wait_count: int = 1, timeout: float = None,
+        predict, tasks: List["Task"], raise_errors: bool = True, wait_count: int = 1, timeout: float = None
     ) -> List["Task"]:
+        """Waits for a specific event to be invoked on the task object.
+
+        Args:
+            predict (Callable or str): If a string, waits for the specific event. Otherwise expects true
+                when a matching event is found. (lambda task, name: ? true)
+            tasks (list) : List of tasks to execute for.
+            raise_errors (bool): True if to raise task errors.
+            wait_count (int): How many times should the event be triggered. Must be larger then zero.
+            timeout (float): The timeout in seconds before throwing an error.
+
+        Returns:
+            The list of tasks sent to the method.
+        """
+
         if isinstance(tasks, Task):
             tasks: List["Task"] = [tasks]
 
@@ -332,15 +373,47 @@ class Task(EventHandler):
         return matched_tasks
 
     @staticmethod
-    def wait_for_some(tasks: List["Task"], raise_errors: bool = True, wait_count: int = 1) -> List["Task"]:
-        return Task.wait_for_events(None, tasks, raise_errors, wait_count=wait_count)
+    def wait_for_some(
+        tasks: List["Task"], raise_errors: bool = True, wait_count: int = 1, timeout: float = None
+    ) -> List["Task"]:
+        """Waits for some of the tasks to complete.
+
+        Args:
+            tasks (list) : List of tasks to execute for.
+            raise_errors (bool): True if to raise task errors.
+            wait_count (int): How many tasks should complete.
+            timeout (float): The timeout in seconds before throwing an error.
+
+        Returns:
+            The list of tasks sent to the method.
+        """
+        return Task.wait_for_events(None, tasks, raise_errors, wait_count=wait_count, timeout=timeout)
 
     @staticmethod
-    def wait_for_one(tasks: List["Task"], raise_errors: bool = True, wait_count: int = 1) -> "Task":
-        return Task.wait_for_some(tasks, raise_errors, wait_count=1)[0]
+    def wait_for_one(tasks: List["Task"], raise_errors: bool = True, timeout: float = None) -> "Task":
+        """Waits for one of the tasks to complete. Same as wait_for_some with wait_count==1
+
+        Args:
+            tasks (list) : List of tasks to execute for.
+            raise_errors (bool): True if to raise task errors.
+            timeout (float): The timeout in seconds before throwing an error.
+
+        Returns:
+            The list of tasks sent to the method.
+        """
+        return Task.wait_for_some(tasks, raise_errors, wait_count=1, timeout=timeout)[0]
 
     @staticmethod
     def get_thread_description(thread: threading.Thread = None):
+        """Helper method. Gets the description of a thread.
+
+        Args:
+            thread (threading.Thread, optional): The thread to get the description for. Defaults to None. 
+                If None use current thread.
+
+        Returns:
+            str: The description.
+        """
         thread = thread or threading.current_thread()
         return f"{thread.name} ({thread.ident})"
 
@@ -348,171 +421,6 @@ class Task(EventHandler):
         if self.use_async_loop:
             return f"async_task ({self._thread_name})"
         return self.get_thread_description(self)
-
-
-class ThreadSafeContextException(TaskOperationException):
-    pass
-
-
-def __is_class_method(fun: Callable):
-    return "." in fun.__qualname__
-
-
-def wrap_with_thread_safe_context(fun, create_context, execute_with_context, source_decorator: Callable = None):
-    """DECORATOR
-
-    Wraps a method to be executed with a context that will be create
-    only once, event if called from multiple threads, for this method.
-
-    Args:
-        fun (callable): The function
-        create_context (callable): A function that will create the context
-            Signature: execute_with_context(self) # null in the case of a non object.
-        execute_with_context (callable): A method to be called to execute with
-        the context. Will preserve "self", and class arguments.
-            Signature: execute_with_context(context, *args,**kwargs)
-
-
-    Returns:
-        callable: A wrapper decorator.
-    """
-
-    if __is_class_method(fun):
-        contexts = WeakKeyDictionary()
-        make_context_lock = threading.Lock()
-
-        @wraps(fun)
-        def warpper(self, *args, **kwargs):
-            # make sure not to create two locks :)
-            with make_context_lock:
-                try:
-                    if self not in contexts:
-                        contexts[self] = create_context(self)
-                except TypeError as typerr:
-                    raise ThreadSafeContextException(
-                        f"The decorator '@{(source_decorator or wrap_with_thread_safe_context).__qualname__}'"
-                        + f" cannot be applied to method '{fun.__qualname__}' "
-                        + "since its parent class is not hashable",
-                        typerr,
-                    )
-                except Exception as ex:
-                    raise ex
-
-            return execute_with_context(contexts[self], self, *args, **kwargs)
-
-        return warpper
-    else:
-        context = create_context(None)
-
-        @wraps(fun)
-        def warpper(*args, **kwargs):
-            return execute_with_context(context, *args, **kwargs)
-
-        return warpper
-
-
-def thread_synchronized(fun):
-    """DECORATOR
-
-    The decorated function will be executed synchronically between threads.
-    (Only one thread at a time; implemented using threading.Lock)
-    """
-
-    def exec_with_lock(lock, *args, **kwargs):
-        raise_exception = None
-        return_val = None
-        with lock:
-            try:
-                return_val = fun(*args, **kwargs)
-            except Exception as ex:
-                raise_exception = ex
-        if raise_exception is not None:
-            raise raise_exception
-        return return_val
-
-    return wrap_with_thread_safe_context(
-        fun, lambda self: threading.Lock(), exec_with_lock, source_decorator=thread_synchronized,
-    )
-
-
-class CollectExecutionCallsContext:
-    def __init__(self, parent, fun, on_error):
-        super().__init__()
-        thread_name = f"ccc_async::{fun.__module__}::{fun.__qualname__}"
-        if parent is not None:
-            thread_name = f"{thread_name} (oid: {id(parent)})"
-        self.task = Task(fun, thread_name=thread_name)
-        self.is_waiting_on_call = False
-        self.was_triggered = False
-        self.parent = parent
-
-        if isinstance(on_error, str):
-            assert parent is not None, ValueError("Cannot assign on_error as string to a non class method")
-            assert hasattr(parent, on_error), ValueError(
-                f"Error method not found in {parent.__class__.__name__}.{on_error}"
-            )
-            self.invoke_error = getattr(parent, on_error)
-
-        else:
-            assert callable(on_error), ValueError("On error must be a callable or a string")
-            self.invoke_error = on_error
-
-        self.task.on("error", lambda task, ex: self.on_error(ex))
-        self.task.on("done", lambda *args, **kwargs: self.on_done())
-
-    def on_done(self):
-        self.was_triggered = False
-        if self.is_waiting_on_call:
-            self.is_waiting_on_call = False
-            self.execute_as_task()
-
-    def on_error(self, ex):
-        if self.invoke_error is not None:
-            self.invoke_error(ex)
-        self.on_done()
-
-    def execute_as_task(self, *args):
-        self.was_triggered = True
-        if self.parent is not None:
-            self.task.start(self.parent)
-        else:
-            self.task.start()
-
-
-def collect_consecutive_calls_async(on_error=None):
-    """DECORATOR
-
-    Multiple calls to this function will be bundled together and
-    will be executed a-synchronically. A method decorated with this decorator
-    cannot have free arguments (except self)
-
-    on_error can be a method or string, if string, and this is a method of a class,
-    the collection will expect, (on_error='call_error')
-
-    class o:
-        def call_error(self,ex):
-            pass
-    """
-
-    def apply_decorator(fun):
-        assert len(inspect.signature(fun).parameters.values()) <= (1 if __is_class_method(fun) else 0), ValueError(
-            "Cannot apply a collect_consecutive_calls_async decorator to a method that has arguments (Except self)"
-        )
-
-        def collect_execution_calls(context: CollectExecutionCallsContext, *args, **kwargs):
-            if context.was_triggered:
-                context.is_waiting_on_call = True
-                return
-            context.execute_as_task(*args)
-
-        return wrap_with_thread_safe_context(
-            fun,
-            lambda self: CollectExecutionCallsContext(self, fun, on_error),
-            collect_execution_calls,
-            source_decorator=collect_consecutive_calls_async,
-        )
-
-    return apply_decorator
 
 
 if __name__ == "__main__":
