@@ -42,11 +42,18 @@ class EventHandler:
     stop_all_streams_event_name = None
 
     def __init__(self, on_event: Callable = None):
-        """An event handler, capable of emitting events.
+        """An event handler. Allows,
+        1. Registering for event callbacks.
+        2. Emitting (broadcasting) events.
+        3. Piping events to other event handlers.
+
         Usage:
             hdnl = EventHandler()
             hndl.on("my event", lambda  msg: print("ok: "+msg))
             hndl.emit("my event", "my message)
+
+        Args:
+            on_event (optional): Called on any event. Defaults to None.
         """
         super().__init__()
         self._pipeto = []
@@ -55,20 +62,25 @@ class EventHandler:
         self._action_last_idx = 0
         self._event_actions_search_by_name: dict = None
         self._events_filter: Callable = None
-        self.stop_all_streams_event_name = self.create_object_instance_unique_event_name("stop_streams")
-        self.catch_all_event_name = self.create_object_instance_unique_event_name("catch_all")
+        self.stop_all_streams_event_name = self._create_object_instance_unique_event_name("stop_streams")
+        self.catch_all_event_name = self._create_object_instance_unique_event_name("catch_all")
 
     @staticmethod
     def _get_value_from_reference(val):
+        """Returns the value of a reference or the value itself. 
+        Allows for easy access to weakref objects.
+        """
         if isinstance(val, weakref.ReferenceType):
             return val()
         return val
 
-    def create_object_instance_unique_event_name(self, base_name: str):
+    def _create_object_instance_unique_event_name(self, base_name: str):
+        """Creates a unique name for internal event handling.
+        """
         return f"{self.__class__.__name__}.{base_name} (oid: {id(self)}, rid:{randint(0,10000)})"
 
     def on_any_event(self, action: Callable) -> int:
-        """Add a new "catchall" event action. This action will be called
+        """Adds a new "catchall" event action. This action will be called
         on ANY event.
 
         Arguments:
@@ -82,7 +94,7 @@ class EventHandler:
         return self.on(self.catch_all_event_name, action)
 
     def on(self, name: str, action: Callable) -> int:
-        """Add a new event call.
+        """Add a new event handler.
 
         Arguments:
             name {str|List[str]} -- The event name
@@ -162,6 +174,8 @@ class EventHandler:
         return True
 
     def _get_event_actions_by_name(self, name: str) -> List[Callable]:
+        """Internal. Retruns all the events actions by name.
+        """
         if self._event_actions_search_by_name is None or name not in self._event_actions_search_by_name:
             self._event_actions_search_by_name = self._event_actions_search_by_name or dict()
 
@@ -173,11 +187,15 @@ class EventHandler:
         return self._event_actions_search_by_name[name]
 
     def _get_catch_all_event_actions(self, original_event_name: str):
+        """Internal gets all catch all events actions by name,
+        """
         if original_event_name != self.catch_all_event_name and self.hasEvent(self.catch_all_event_name):
             return list(self._event_actions[self.catch_all_event_name].values())
         return []
 
     def _get_pipe_handlers(self) -> List["EventHandler"]:
+        """Get all pipe handlers to propagate events.
+        """
         handlers = []
         needs_pipe_cleaning = False
         for hndl in self._pipeto:
@@ -195,6 +213,8 @@ class EventHandler:
 
     @classmethod
     def _process_in_thread_event_action_result(cls, action_result, debug: bool = None):
+        """Call to await (if possible) aysncio results.
+        """
         if asyncio.iscoroutine(action_result):
             loop = get_active_loop()
             if loop.is_running():
@@ -289,12 +309,30 @@ class EventHandler:
 
     @classmethod
     def create_events_filter_pipe(cls, predict: filter_events_predict) -> "EventHandler":
+        """Faster event handler creation. The filter pipe allows for passing only specific events
+        to between events handlers.
+
+        Args:
+            predict - a callable to predict if this event should be propagated.
+
+        Returns:
+            A new pipe event handler.
+        """
         hndl = EventHandler()
         hndl.filter_events(predict)
         return hndl
 
     @classmethod
     def create_event_name_filter_pipe(cls, events: List[str]) -> "EventHandler":
+        """Faster event handler creation. The filter pipe allows for passing only specific events
+        to between events handlers.
+
+        Args:
+            events - a list of events to propagate.
+
+        Returns:
+            A new pipe event handler.
+        """
         assert all(isinstance(ev, (str, Enum)) for ev in events)
 
         events = [str(ev) for ev in events]
@@ -308,9 +346,23 @@ class EventHandler:
         return hndl
 
     def stop_all_streams(self):
+        """Invokes an interanl events that stops any event streams that were opened.
+        When a steam is stopped, its yield command becomes unblocking. 
+        
+        For the case of a loop, it would exit, eg,
+        
+        Example:
+
+            for a in my_stream:
+                ....
+            
+            hndl.stop_all_steams -> will exit loop.
+        """
         self.emit(self.stop_all_streams_event_name)
 
     def _prepare_stream_queue(self, event_name: str = None) -> (SimpleQueue, "EventHandler"):
+        """Internal, prepare a stream internal queue to manage events.
+        """
         pipe_handler = EventHandler()
         queue = SimpleQueue()
 
@@ -328,6 +380,8 @@ class EventHandler:
         return queue, pipe_handler
 
     def _get_queue_event(self, queue: SimpleQueue, timeout: float) -> Event:
+        """Internal. Get next queued event, with timeout.
+        """
         try:
             event = queue.get(block=True, timeout=timeout)
         except Empty:
@@ -345,6 +399,17 @@ class EventHandler:
         timeout: float,
         process_event_data: Callable = None,
     ) -> Generator[Event, None, None]:
+        """Internal. Creates a new stream.
+
+        Args:
+            queue (SimpleQueue): The associated queue.
+            pipe_handler (EventHander): The event piping handler.
+            process_event_data (Callable, optional): A method to pre-process event data before
+                the event is sent to the stream. Defaults to None.
+
+        Yields:
+            Generator of Event.
+        """
         while True:
             ev: Event = self._get_queue_event(queue, timeout)
             if ev.name == self.stop_all_streams_event_name:
@@ -360,6 +425,17 @@ class EventHandler:
         timeout: float,
         process_event_data: Callable = None,
     ) -> AsyncGenerator[Event, None]:
+        """Internal. Creates a new async stream.
+
+        Args:
+            queue (SimpleQueue): The associated queue.
+            pipe_handler (EventHander): The event piping handler.
+            process_event_data (Callable, optional): A method to pre-process event data before
+                the event is sent to the stream. Defaults to None.
+
+        Yields:
+            AsyncGenerator of Event.
+        """
         while True:
             ev: Event = self._get_queue_event(queue, timeout)
             if ev.name == self.stop_all_streams_event_name:
@@ -375,7 +451,19 @@ class EventHandler:
         use_async_loop: bool = False,
         process_event_data: Callable = None,
     ) -> Generator[Event, None, None]:
-        """Create an event stream, called on any event.
+        """Creates an event stream that will collect any event from this handler.
+
+        Args:
+            event_name (str, optional): The event name to stream. Defaults to None. If none, streams
+                all events
+            timeout (float, optional): Timeout between events. Defaults to None.
+            use_async_loop (bool, optional): Use an asyncio loop to perform the stream. This would result
+                in an asyncio compatible stream. Defaults to False.
+            process_event_data (Callable, optional): A method to be called on any event value. The
+                result of this method is passed to the stream. Defaults to None.
+
+        Yields:
+            Generator|AsyncGenerator of Event | the result of process_event_data
         """
         if isinstance(event_name, Enum):
             event_name = str(event_name)
@@ -392,21 +480,25 @@ class EventHandler:
 
 class AsyncEventHandler(EventHandler):
     def __init__(self, on_event: Callable = None):
-        """An event handler, capable of a-synchronically emitting events.
+        """An event handler compatible with asyncio. Allows,
+        1. Registering for event callbacks.
+        2. Emitting (broadcasting) events.
+        3. Piping events to other event handlers.
+
         Usage:
             hdnl = EventHandler()
             hndl.on("my event", lambda  msg: print("ok: "+msg))
-
             hndl.emit("my event", "my message)
 
-            or
-
-            hndl.emit_sync("my event", "my message)
+        Args:
+            on_event (optional): Called on any event. Defaults to None.
         """
         super().__init__(on_event=on_event)
 
     @classmethod
     async def _process_async_action_result(cls, action_result):
+        """Call to await (if needed) aysncio results.
+        """
         if asyncio.iscoroutine(action_result):
             return await action_result
         else:
