@@ -542,14 +542,14 @@ class EventHandler:
         first_error = None
         matched_handlers = []
 
-        def stop_on_error(hndl, error):
+        def stop_on_error(hndl: EventHandler, error):
             nonlocal first_error
             first_error = error
             wait_queue.put("error")
 
         def on_piped_event(handler, name, *args, **kwargs):
             if name == "error":
-                stop_on_error(handler, args[0])
+                stop_on_error(handler, args[1])
                 return
             if predict is None or predict(handler, name, *args, **kwargs):
                 matched_handlers.append(handler)

@@ -324,10 +324,35 @@ class Task(EventHandler):
             The list of tasks sent to the method.
         """
 
+        active_tasks = []
+        matched_tasks = []
+
+        for t in tasks:
+            if raise_errors and t.error is not None:
+                raise t.error
+
+            if t.is_running:
+                active_tasks.append(t)
+            else:
+                matched_tasks.append(t)
+
+        if len(matched_tasks) >= wait_count:
+            return matched_tasks[:wait_count]
+
         def predict_task_done(task: Task, name, *args, **kwargs):
             return name == task.event_name
 
-        return Task.wait_for_events(predict_task_done, tasks, raise_errors, wait_count=wait_count, timeout=timeout,)
+        matched_tasks.extend(
+            Task.wait_for_events(
+                predict_task_done,
+                active_tasks,
+                raise_errors,
+                wait_count=wait_count - len(matched_tasks),
+                timeout=timeout,
+            )
+        )
+
+        return matched_tasks
 
     @staticmethod
     def wait_for_one(tasks: List["Task"], raise_errors: bool = True, timeout: float = None) -> "Task":

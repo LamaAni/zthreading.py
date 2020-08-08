@@ -6,6 +6,10 @@ from zthreading import events
 from zthreading.tasks import Task
 
 
+class DummyExcpetion(Exception):
+    pass
+
+
 def test_event_handler_event():
     hndl = events.EventHandler()
     hndl.on("test_event", lambda: print("ok"))
@@ -202,5 +206,20 @@ def test_wait_for_events_predict():
     assert rslt[0] is hndl, "Did not return correct handler"
 
 
+def test_wait_for_events_with_error():
+    # hndl = events.EventHandler()
+
+    async def send_event():
+        time.sleep(0.1)
+        raise DummyExcpetion()
+
+    # asyncio will not work here :)
+    task = Task(send_event).start()
+
+    with pytest.raises(DummyExcpetion):
+        task.wait_for_events(lambda sender, name, *args: name == "test_event", [task], timeout=1)
+
+
 if __name__ == "__main__":
+    # test_wait_for_events_with_error()
     pytest.main(["-x", __file__])

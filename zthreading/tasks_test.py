@@ -67,6 +67,26 @@ def test_wait_for_one():
     assert not task1.is_running and task2.is_running, "Failed to wait for task"
 
 
+def test_wait_for_one_with_error():
+    def raise_error():
+        # time.sleep(0.1)
+        raise DummyTestError()
+
+    task1 = Task(raise_error).start()
+    with pytest.raises(DummyTestError):
+        Task.wait_for_one([task1], timeout=1)
+
+
+def test_wait_for_one_with_error_and_completed():
+    def raise_error():
+        raise DummyTestError()
+
+    task1 = Task(raise_error).start()
+    time.sleep(0.1)
+    with pytest.raises(DummyTestError):
+        Task.wait_for_one([task1], timeout=1)
+
+
 def test_wait_for_some():
     def coro(t):
         time.sleep(t)
@@ -190,4 +210,6 @@ def test_collect_consecutive_calls_async_exception():
 
 
 if __name__ == "__main__":
+    # test_wait_for_one_with_error_and_completed()
+    # test_wait_for_one()
     pytest.main(["-x", __file__])
