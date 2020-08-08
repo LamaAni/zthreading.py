@@ -257,7 +257,9 @@ class Task(EventHandler):
         return self._action_result
 
     @staticmethod
-    def wait_for_all(tasks: List["Task"], raise_errors: bool = True, error_event_name: str = "error"):
+    def wait_for_all(
+        tasks: List["Task"], raise_errors: bool = True, error_event_name: str = "error", timeout: float = None
+    ):
         """Waits for all tasks in the array of tasks to complete.
 
         Arguments:
@@ -297,7 +299,7 @@ class Task(EventHandler):
                 task.pipe(pipe_handler)
 
         for task in tasks:
-            task.join(raise_last_exception=False)
+            task.join(timeout=timeout, raise_last_exception=False)
 
         if raise_errors:
             for task in tasks:
@@ -305,72 +307,6 @@ class Task(EventHandler):
 
         if first_error is not None:
             raise first_error
-
-    @staticmethod
-    def wait_for_events(
-        predict, tasks: List["Task"], raise_errors: bool = True, wait_count: int = 1, timeout: float = None
-    ) -> List["Task"]:
-        """Waits for a specific event to be invoked on the task object.
-
-        Args:
-            predict (Callable or str): If a string, waits for the specific event. Otherwise expects true
-                when a matching event is found. (lambda task, name: ? true)
-            tasks (list) : List of tasks to execute for.
-            raise_errors (bool): True if to raise task errors.
-            wait_count (int): How many times should the event be triggered. Must be larger then zero.
-            timeout (float): The timeout in seconds before throwing an error.
-
-        Returns:
-            The list of tasks sent to the method.
-        """
-
-        if isinstance(tasks, Task):
-            tasks: List["Task"] = [tasks]
-
-        assert wait_count > 0, "Wait count must be at least 1"
-
-        def predict_event_by_name(task: Task, name: str):
-            return name == (predict or task.event_name)
-
-        if isinstance(predict, str):
-            predict = predict_event_by_name
-
-        assert callable(predict), "Predict must be a Callable or event name string"
-
-        wait_queue = SimpleQueue()
-        first_error = None
-        matched_tasks = []
-
-        def stop_on_error(task, error):
-            nonlocal first_error
-            first_error = error
-            for task in tasks:
-                if task.is_running:
-                    task.stop()
-            wait_queue.put("error")
-
-        def on_piped_event(name, task, *args, **kwargs):
-            if name == "error":
-                stop_on_error(task, args[0])
-                return
-            if predict(task, name, *args, **kwargs):
-                matched_tasks.append(task)
-            if len(matched_tasks) == wait_count:
-                wait_queue.put("done")
-
-        pipe_handler = EventHandler(on_event=on_piped_event)
-        for task in tasks:
-            task.pipe(pipe_handler, use_weak_reference=True)
-
-        try:
-            wait_queue.get(timeout=timeout)
-        except Empty:
-            first_error = TimeoutError
-
-        if first_error is not None:
-            raise first_error
-
-        return matched_tasks
 
     @staticmethod
     def wait_for_some(
@@ -387,7 +323,11 @@ class Task(EventHandler):
         Returns:
             The list of tasks sent to the method.
         """
-        return Task.wait_for_events(None, tasks, raise_errors, wait_count=wait_count, timeout=timeout)
+
+        def predict_task_done(task: Task, name, *args, **kwargs):
+            return name == task.event_name
+
+        return Task.wait_for_events(predict_task_done, tasks, raise_errors, wait_count=wait_count, timeout=timeout,)
 
     @staticmethod
     def wait_for_one(tasks: List["Task"], raise_errors: bool = True, timeout: float = None) -> "Task":

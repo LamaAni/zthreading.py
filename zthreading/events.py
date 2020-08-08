@@ -483,6 +483,103 @@ class EventHandler:
             return self._create_stream_async(queue, pipe_handler, timeout, process_event_data)
         return self._create_stream(queue, pipe_handler, timeout, process_event_data)
 
+    def wait_for(
+        self, predict, raise_errors: bool = True, wait_count: int = 1, timeout: float = None,
+    ):
+        """Waits for a specific event to be invoked.
+
+        Args:
+            predict (Callable or str): If a string, waits for the specific event. Otherwise expects true
+                when a matching event is found. (lambda task, name: ? true)
+            raise_errors (bool): True if to raise handler errors.
+            wait_count (int): How many times should the event be triggered. Must be larger then zero.
+            timeout (float): The timeout in seconds before throwing an error.
+
+        Returns:
+            The list of tasks sent to the method.
+        """
+        self.wait_for_events(predict, [self], raise_errors=raise_errors, wait_count=wait_count, timeout=timeout)
+
+    @classmethod
+    def wait_for_events(
+        cls,
+        predict,
+        handlers: List["EventHandler"],
+        raise_errors: bool = True,
+        wait_count: int = 1,
+        timeout: float = None,
+    ) -> List["EventHandler"]:
+        """Waits for a specific event to be invoked on the handlers.
+
+        Args:
+            predict (Callable or str): If a string, waits for the specific event. Otherwise expects true
+                when a matching event is found. (lambda task, name: ? true)
+            handlers (list) : List of handlers to execute for.
+            raise_errors (bool): True if to raise handler errors.
+            wait_count (int): How many times should the event be triggered. Must be larger then zero.
+            timeout (float): The timeout in seconds before throwing an error.
+
+        Returns:
+            The list of tasks sent to the method.
+        """
+
+        if isinstance(handlers, EventHandler):
+            handlers: List["Task"] = [handlers]
+
+        assert wait_count > 0, "Wait count must be at least 1"
+
+        if predict is not None and not isinstance(predict, Callable):
+            predict_equals = predict
+
+            def predict_event_by_name(sender: EventHandler, name: str, *args, **kwargs):
+                return name == predict_equals
+
+            predict = predict_event_by_name
+
+        assert predict is None or callable(predict), "Predict must be a Callable or event name string"
+
+        wait_queue = SimpleQueue()
+        first_error = None
+        matched_handlers = []
+
+        def stop_on_error(hndl, error):
+            nonlocal first_error
+            first_error = error
+            wait_queue.put("error")
+
+        def on_piped_event(handler, name, *args, **kwargs):
+            if name == "error":
+                stop_on_error(handler, args[0])
+                return
+            if predict is None or predict(handler, name, *args, **kwargs):
+                matched_handlers.append(handler)
+            if len(matched_handlers) == wait_count:
+                wait_queue.put("done")
+
+        pipes = []
+
+        def bind(handler: EventHandler):
+            pipe_handler = EventHandler(
+                on_event=lambda pipe, name, *args, **kwargs: on_piped_event(handler, name, *args, **kwargs)
+            )
+            pipes.append(pipe_handler)
+            handler.pipe(
+                pipe_handler, use_weak_reference=True,
+            )
+
+        for handler in handlers:
+            bind(handler)
+
+        try:
+            wait_queue.get(timeout=timeout)
+        except Empty:
+            first_error = TimeoutError(f"Timeout while waiting for event: {predict}")
+
+        if first_error is not None:
+            raise first_error
+
+        return matched_handlers
+
 
 class AsyncEventHandler(EventHandler):
     def __init__(self, on_event: Callable = None):

@@ -55,6 +55,44 @@ def test_already_running():
     main_task_2.join()
 
 
+def test_wait_for_one():
+    def coro(t):
+        time.sleep(t)
+        return "test"
+
+    task1 = Task(coro).start(0.1)
+    task2 = Task(coro).start(0.2)
+
+    Task.wait_for_one([task1, task2], timeout=1)
+    assert not task1.is_running and task2.is_running, "Failed to wait for task"
+
+
+def test_wait_for_some():
+    def coro(t):
+        time.sleep(t)
+        return "test"
+
+    task1 = Task(coro).start(0.1)
+    task2 = Task(coro).start(0.2)
+    task3 = Task(coro).start(0.3)
+
+    Task.wait_for_some([task1, task2, task3], timeout=1, wait_count=2)
+    assert not task1.is_running and not task2.is_running and task3.is_running, "Failed to wait for task"
+
+
+def test_wait_for_all():
+    def coro(t):
+        time.sleep(t)
+        return "test"
+
+    task1 = Task(coro).start(0.1)
+    task2 = Task(coro).start(0.2)
+    task3 = Task(coro).start(0.3)
+
+    Task.wait_for_all([task1, task2, task3])
+    assert not task1.is_running and not task2.is_running and not task3.is_running, "Failed to wait for task"
+
+
 def test_task_use_async_loop():
     data = {
         "started": False,
