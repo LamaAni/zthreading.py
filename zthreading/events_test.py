@@ -44,15 +44,116 @@ def test_event_handler_event_invalid_arg_list():
         hndl.emit("test_event", named_arg=True)
 
 
+def test_evennt_stream_preload():
+    hndl = events.EventHandler()
+    strm = hndl.stream(timeout=0.1)
+    hndl.emit("test_event")
+    assert strm.__next__() is not None
+
+
+def test_evennt_stream_in_thread():
+    hndl = events.EventHandler()
+
+    def send_event():
+        time.sleep(0.01)
+        hndl.emit("test_event")
+
+    threading.Thread(target=send_event).start()
+    strm = hndl.stream(timeout=0.1)
+
+    assert strm.__next__() is not None
+
+
+def test_events_streams_using_threads():
+    hndl = events.EventHandler()
+
+    def do_emit():
+        for i in range(0, 4):
+            hndl.emit("test")
+            time.sleep(0.001)
+        hndl.stop_all_streams()
+
+    event_stream = hndl.stream("test")
+    Task(do_emit).start()
+    col = []
+    for ev in event_stream:
+        col.append(ev)
+    assert len(col) == 4
+
+
+def test_wait_for_self():
+    hndl = events.EventHandler()
+
+    def send_event():
+        time.sleep(0.1)
+        hndl.emit("test_event")
+
+    # asyncio will not work here :)
+    Task(send_event).start()
+    hndl.wait_for("test_event", timeout=1)
+
+
+def test_wait_for_events():
+    hndl = events.EventHandler()
+
+    def send_event():
+        time.sleep(0.1)
+        hndl.emit("test_event")
+
+    # asyncio will not work here :)
+    Task(send_event).start()
+    rslt = hndl.wait_for_events("test_event", [hndl], timeout=1)
+    assert rslt[0] is hndl, "Did not return correct handler"
+
+
+def test_wait_for_events_none():
+    hndl = events.EventHandler()
+
+    def send_event():
+        time.sleep(0.1)
+        hndl.emit("test_event")
+
+    Task(send_event).start()
+    rslt = hndl.wait_for_events(None, [hndl], timeout=1)
+    assert rslt[0] is hndl, "Did not return correct handler"
+
+
+def test_wait_for_events_predict():
+    hndl = events.EventHandler()
+
+    def send_event():
+        time.sleep(0.1)
+        hndl.emit("test_event")
+
+    Task(send_event).start()
+    rslt = hndl.wait_for_events(lambda sender, name, *args: name == "test_event", [hndl], timeout=1)
+    assert rslt[0] is hndl, "Did not return correct handler"
+
+
+def test_wait_for_events_with_error():
+    def send_event():
+        time.sleep(0.1)
+        raise DummyExcpetion()
+
+    task = Task(send_event).start()
+
+    with pytest.raises(DummyExcpetion):
+        task.wait_for_events(lambda sender, name, *args: name == "test_event", [task], timeout=1)
+
+
+# -----------------------------------------
+# AsyncIO tests
+
+
 @pytest.mark.asyncio
-async def test_event_handler_event_async():
+async def test_event_handler_event_asyncio():
     hndl = events.AsyncEventHandler()
     hndl.on("test_event", lambda: print("ok"))
     await hndl.emit("test_event")
 
 
 @pytest.mark.asyncio
-async def test_event_handler_args_async():
+async def test_event_handler_args_async_asyncio():
     hndl = events.AsyncEventHandler()
 
     rslt = {
@@ -81,66 +182,8 @@ async def test_event_handler_event_invalid_arg_list_async():
         await hndl.emit("test_event", named_arg=True)
 
 
-def test_evennt_stream_preload():
-    hndl = events.EventHandler()
-    strm = hndl.stream(timeout=0.1)
-    hndl.emit("test_event")
-    assert strm.__next__() is not None
-
-
-def test_evennt_stream_in_thread():
-    hndl = events.EventHandler()
-
-    def send_event():
-        time.sleep(0.01)
-        hndl.emit("test_event")
-
-    threading.Thread(target=send_event).start()
-    strm = hndl.stream(timeout=0.1)
-
-    assert strm.__next__() is not None
-
-
 @pytest.mark.asyncio
-async def test_evennt_stream_preload_asyncio():
-    hndl = events.EventHandler()
-    strm = hndl.stream(timeout=0.1, use_async_loop=True)
-    hndl.emit("test_event")
-    assert await strm.__anext__() is not None
-
-
-@pytest.mark.asyncio
-async def test_evennt_stream_in_corutine():
-    hndl = events.EventHandler()
-
-    async def send_event():
-        hndl.emit("test_event")
-
-    asyncio.create_task(send_event())
-    strm = hndl.stream(timeout=0.1, use_async_loop=True)
-    await asyncio.sleep(0.01)  # allow the other task to execute.
-    assert await strm.__anext__() is not None
-
-
-def test_events_streams_using_threads():
-    hndl = events.EventHandler()
-
-    def do_emit():
-        for i in range(0, 4):
-            hndl.emit("test")
-            time.sleep(0.001)
-        hndl.stop_all_streams()
-
-    event_stream = hndl.stream("test")
-    Task(do_emit).start()
-    col = []
-    for ev in event_stream:
-        col.append(ev)
-    assert len(col) == 4
-
-
-@pytest.mark.asyncio
-async def test_evennt_stream_stop():
+async def test_evennt_stream_stop_asyncio():
     hndl = events.EventHandler()
 
     async def send_event():
@@ -155,71 +198,28 @@ async def test_evennt_stream_stop():
         pass
 
 
-def test_wait_for_self():
+@pytest.mark.asyncio
+async def test_evennt_stream_preload_asyncio():
     hndl = events.EventHandler()
-
-    async def send_event():
-        time.sleep(0.1)
-        hndl.emit("test_event")
-
-    # asyncio will not work here :)
-    Task(send_event).start()
-    hndl.wait_for("test_event", timeout=1)
+    strm = hndl.stream(timeout=0.1, use_async_loop=True)
+    hndl.emit("test_event")
+    assert await strm.__anext__() is not None
 
 
-def test_wait_for_events():
+@pytest.mark.asyncio
+async def test_evennt_stream_in_corutine_asyncio():
     hndl = events.EventHandler()
+    strm = hndl.stream(timeout=0.1, use_async_loop=True)
 
     async def send_event():
-        time.sleep(0.1)
         hndl.emit("test_event")
+        hndl.stop_all_streams()
 
-    # asyncio will not work here :)
     Task(send_event).start()
-    rslt = hndl.wait_for_events("test_event", [hndl], timeout=1)
-    assert rslt[0] is hndl, "Did not return correct handler"
-
-
-def test_wait_for_events_none():
-    hndl = events.EventHandler()
-
-    async def send_event():
-        time.sleep(0.1)
-        hndl.emit("test_event")
-
-    # asyncio will not work here :)
-    Task(send_event).start()
-    rslt = hndl.wait_for_events(None, [hndl], timeout=1)
-    assert rslt[0] is hndl, "Did not return correct handler"
-
-
-def test_wait_for_events_predict():
-    hndl = events.EventHandler()
-
-    async def send_event():
-        time.sleep(0.1)
-        hndl.emit("test_event")
-
-    # asyncio will not work here :)
-    Task(send_event).start()
-    rslt = hndl.wait_for_events(lambda sender, name, *args: name == "test_event", [hndl], timeout=1)
-    assert rslt[0] is hndl, "Did not return correct handler"
-
-
-def test_wait_for_events_with_error():
-    # hndl = events.EventHandler()
-
-    async def send_event():
-        time.sleep(0.1)
-        raise DummyExcpetion()
-
-    # asyncio will not work here :)
-    task = Task(send_event).start()
-
-    with pytest.raises(DummyExcpetion):
-        task.wait_for_events(lambda sender, name, *args: name == "test_event", [task], timeout=1)
+    await asyncio.sleep(0.01)  # allow the other task to execute.
+    rslt = await strm.__anext__()
+    assert rslt is not None
 
 
 if __name__ == "__main__":
-    # test_wait_for_events_with_error()
     pytest.main(["-x", __file__])

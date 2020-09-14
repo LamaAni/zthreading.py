@@ -30,7 +30,7 @@ setup(
     packages=["zthreading"],
     platforms="any",
     license="LICENSE",
-    install_requires=[],
+    install_requires=["asyncio>=3.4.3"],
     python_requires=">=3.6",
     include_package_data=True,
 )
