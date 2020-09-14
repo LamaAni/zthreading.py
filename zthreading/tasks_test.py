@@ -3,7 +3,7 @@ import time
 import asyncio
 from zthreading import tasks, decorators
 from zthreading.tasks import Task
-from concurrent.futures import TimeoutError
+from asyncio import TimeoutError
 
 tasks.Task.THROW_INTERNAL_EXCEPTIONS_DEFAULT = False
 
@@ -166,8 +166,7 @@ def raise_task_exception():
 
 
 def test_common_threaded_task_with_join_exception():
-    """Test for thread exception with join.
-    """
+    """Test for thread exception with join."""
     with pytest.raises(DummyTestError):
         task = tasks.Task(raise_task_exception)
         task.start()
@@ -210,6 +209,4 @@ def test_collect_consecutive_calls_async_exception():
 
 
 if __name__ == "__main__":
-    # test_wait_for_one_with_error_and_completed()
-    # test_wait_for_one()
     pytest.main(["-x", __file__])

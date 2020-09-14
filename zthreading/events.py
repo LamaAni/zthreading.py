@@ -3,7 +3,9 @@ import asyncio
 
 from enum import Enum
 from random import randint
-from queue import SimpleQueue, Empty
+from asyncio import TimeoutError
+from zthreading.thread_queue import Queue
+from queue import Empty
 from typing import Dict, Callable, List, Generator, AsyncGenerator
 
 
@@ -366,11 +368,11 @@ class EventHandler:
         """
         self.emit(self.stop_all_streams_event_name)
 
-    def _prepare_stream_queue(self, event_name: str = None) -> (SimpleQueue, "EventHandler"):
+    def _prepare_stream_queue(self, event_name: str = None) -> (Queue, "EventHandler"):
         """Internal, prepare a stream internal queue to manage events.
         """
         pipe_handler = EventHandler()
-        queue = SimpleQueue()
+        queue = Queue()
 
         def append_to_queue(name, *args: list, **kwargs):
             if event_name is not None and name not in [
@@ -385,7 +387,7 @@ class EventHandler:
 
         return queue, pipe_handler
 
-    def _get_queue_event(self, queue: SimpleQueue, timeout: float) -> Event:
+    def _get_queue_event(self, queue: Queue, timeout: float) -> Event:
         """Internal. Get next queued event, with timeout.
         """
         try:
@@ -400,7 +402,7 @@ class EventHandler:
 
     def _create_stream(
         self,
-        queue: SimpleQueue,
+        queue: Queue,
         pipe_handler: "EventHander",  # noqa: F821
         timeout: float,
         process_event_data: Callable = None,
@@ -408,7 +410,7 @@ class EventHandler:
         """Internal. Creates a new stream.
 
         Args:
-            queue (SimpleQueue): The associated queue.
+            queue (Queue): The associated queue.
             pipe_handler (EventHander): The event piping handler.
             process_event_data (Callable, optional): A method to pre-process event data before
                 the event is sent to the stream. Defaults to None.
@@ -426,7 +428,7 @@ class EventHandler:
 
     async def _create_stream_async(
         self,
-        queue: SimpleQueue,
+        queue: Queue,
         pipe_handler: "EventHander",  # noqa: F821
         timeout: float,
         process_event_data: Callable = None,
@@ -434,7 +436,7 @@ class EventHandler:
         """Internal. Creates a new async stream.
 
         Args:
-            queue (SimpleQueue): The associated queue.
+            queue (Queue): The associated queue.
             pipe_handler (EventHander): The event piping handler.
             process_event_data (Callable, optional): A method to pre-process event data before
                 the event is sent to the stream. Defaults to None.
@@ -538,7 +540,7 @@ class EventHandler:
 
         assert predict is None or callable(predict), "Predict must be a Callable or event name string"
 
-        wait_queue = SimpleQueue()
+        wait_queue = Queue()
         first_error = None
         matched_handlers = []
 

@@ -1,12 +1,19 @@
 import os
+import sys
 import threading
 import asyncio
 
 from datetime import datetime
-from queue import SimpleQueue, Empty
+from queue import Empty
 from typing import List, Callable
 
 from zthreading.events import EventHandler, get_active_loop
+
+def get_asyncio_future_event_loop(task:asyncio.Task):
+    if hasattr(task, "get_loop"):
+        return task.get_loop()
+    else:
+        return task._loop
 
 
 def abort_executing_thread(thread: threading.Thread):
@@ -33,8 +40,8 @@ def wait_for_future(future: asyncio.Future, timeout: float = None):
     if asyncio.iscoroutine(future):
         loop = get_active_loop()
         future = loop.create_task(future)
-
-    loop = future.get_loop()
+    else:
+        loop = get_asyncio_future_event_loop(future)
 
     if timeout is not None:
         future = asyncio.wait_for(future, timeout=timeout, loop=loop)
