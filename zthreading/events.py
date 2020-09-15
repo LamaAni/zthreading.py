@@ -49,11 +49,10 @@ class EventHandler:
     _pipeto: [] = None
     _action_last_idx = 0
     stop_all_streams_event_name = None
-    stop_all_streams_on_error_event = False
     warning_event_name = "warning"
     error_event_name = "error"
 
-    def __init__(self, on_event: Callable = None, stop_all_streams_on_error_event=False):
+    def __init__(self, on_event: Callable = None):
         """An event handler. Allows,
         1. Registering for event callbacks.
         2. Emitting (broadcasting) events.
@@ -66,11 +65,8 @@ class EventHandler:
 
         Args:
             on_event (optional): Called on any event. Defaults to None.
-            stop_all_streams_on_error_event (optional): If true, all streams will be stopped on
-                an error event.
         """
         super().__init__()
-        self.stop_all_streams_on_error_event = stop_all_streams_on_error_event
         self._pipeto = []
         self._event_actions = dict()
         self.on_event = on_event
@@ -265,9 +261,6 @@ class EventHandler:
         for handler in self._get_pipe_handlers():
             self._process_in_thread_event_action_result(handler.emit(name, *args, **kwargs))
 
-        if self.stop_all_streams_on_error_event and name == self.error_event_name:
-            self.stop_all_streams()
-
     def bind_logger(self, logger=logging):
         """Binds a logger to show warnings and errors. Event handler.
 
@@ -407,6 +400,7 @@ class EventHandler:
             if event_name is not None and name not in [
                 event_name,
                 self.stop_all_streams_event_name,
+                self.error_event_name,
             ]:
                 return
             queue.put(Event(name, args, kwargs))
@@ -416,15 +410,13 @@ class EventHandler:
 
         return queue, pipe_handler
 
-    def _get_queue_event(self, queue: Queue, timeout: float) -> Event:
+    @classmethod
+    def _get_queue_event(cls, queue: Queue, timeout: float) -> Event:
         """Internal. Get next queued event, with timeout."""
         try:
             event = queue.get(block=True, timeout=timeout)
         except Empty:
             raise Empty("Timed out while waiting for stream")
-
-        if event.name == "error":
-            raise event.args[0]
 
         return event
 
@@ -434,35 +426,20 @@ class EventHandler:
         pipe_handler: "EventHander",  # noqa: F821
         timeout: float,
         process_event_data: Callable = None,
+        throw_errors: bool = True,
     ) -> Generator[Event, None, None]:
-        """Internal. Creates a new stream.
-
-        Args:
-            queue (Queue): The associated queue.
-            pipe_handler (EventHander): The event piping handler.
-            process_event_data (Callable, optional): A method to pre-process event data before
-                the event is sent to the stream. Defaults to None.
-
-        Yields:
-            Generator of Event.
-        """
-        errors = []
-        warnings = []
-
-        error_handler = EventHandler()
-        self.pipe(error_handler, use_weak_reference=True)
-
-        error_handler.on(self.error_event_name, lambda h, err: errors.append(err))
-        error_handler.on(self.warning_event_name, lambda h, wrn: warnings.append(wrn))
+        """Internal. Creates a new stream."""
 
         while True:
             ev: Event = self._get_queue_event(queue, timeout)
+            if ev.name == self.error_event_name:
+                if throw_errors:
+                    raise ev.args[1] if len(ev.args) > 1 else ev.args[0] if len(ev.args) == 1 else Exception(
+                        "Unknown stream exception"
+                    )
+                else:
+                    continue
             if ev.name == self.stop_all_streams_event_name:
-                if len(errors) > 0:
-                    if len(errors) == 1:
-                        raise errors[0]
-                    else:
-                        raise Exception("Multiple errors occurred while streaming", *errors)
                 break
             if process_event_data is not None:
                 ev = process_event_data(ev)
@@ -474,24 +451,10 @@ class EventHandler:
         pipe_handler: "EventHander",  # noqa: F821
         timeout: float,
         process_event_data: Callable = None,
+        throw_errors: bool = True,
     ) -> AsyncGenerator[Event, None]:
-        """Internal. Creates a new async stream.
-
-        Args:
-            queue (Queue): The associated queue.
-            pipe_handler (EventHander): The event piping handler.
-            process_event_data (Callable, optional): A method to pre-process event data before
-                the event is sent to the stream. Defaults to None.
-
-        Yields:
-            AsyncGenerator of Event.
-        """
-        while True:
-            ev: Event = self._get_queue_event(queue, timeout)
-            if ev.name == self.stop_all_streams_event_name:
-                break
-            if process_event_data is not None:
-                ev = process_event_data(ev)
+        """Internal. Creates a new async stream."""
+        for ev in self._create_stream(queue, pipe_handler, timeout, process_event_data, throw_errors):
             yield ev
 
     def stream(
@@ -500,6 +463,7 @@ class EventHandler:
         timeout: float = None,
         use_async_loop: bool = False,
         process_event_data: Callable = None,
+        throw_errors: bool = True,
     ) -> Generator[Event, None, None]:
         """Creates an event stream that will collect any event from this handler.
 
@@ -511,6 +475,7 @@ class EventHandler:
                 in an asyncio compatible stream. Defaults to False.
             process_event_data (Callable, optional): A method to be called on any event value. The
                 result of this method is passed to the stream. Defaults to None.
+            throw_errors (bool, optional): Throw error events (event_name=self.error_event_name)
 
         Yields:
             Generator|AsyncGenerator of Event | the result of process_event_data
@@ -524,8 +489,21 @@ class EventHandler:
 
         queue, pipe_handler = self._prepare_stream_queue(event_name)
         if use_async_loop is True:
-            return self._create_stream_async(queue, pipe_handler, timeout, process_event_data)
-        return self._create_stream(queue, pipe_handler, timeout, process_event_data)
+            return self._create_stream_async(
+                queue=queue,
+                pipe_handler=pipe_handler,
+                timeout=timeout,
+                process_event_data=process_event_data,
+                throw_errors=throw_errors,
+            )
+        else:
+            return self._create_stream(
+                queue=queue,
+                pipe_handler=pipe_handler,
+                timeout=timeout,
+                process_event_data=process_event_data,
+                throw_errors=throw_errors,
+            )
 
     def wait_for(
         self,
@@ -681,9 +659,6 @@ class AsyncEventHandler(EventHandler):
 
         for handler in self._get_pipe_handlers():
             await self._process_async_action_result(handler.emit(name, *args, **kwargs))
-
-        if self.stop_all_streams_on_error_event and name == self.error_event_name:
-            self.stop_all_streams()
 
     def emit_sync(self, name: str, *args, **kwargs):
         """Synchronically emits an event. Any arguments sent after name, will

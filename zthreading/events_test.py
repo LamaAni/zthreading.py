@@ -44,14 +44,14 @@ def test_event_handler_event_invalid_arg_list():
         hndl.emit("test_event", named_arg=True)
 
 
-def test_evennt_stream_preload():
+def test_events_stream_preload():
     hndl = events.EventHandler()
     strm = hndl.stream(timeout=0.1)
     hndl.emit("test_event")
     assert strm.__next__() is not None
 
 
-def test_evennt_stream_in_thread():
+def test_events_stream_in_thread():
     hndl = events.EventHandler()
 
     def send_event():
@@ -64,9 +64,8 @@ def test_evennt_stream_in_thread():
     assert strm.__next__() is not None
 
 
-def test_evennt_stream_in_thread_error():
+def test_events_stream_in_thread_error():
     hndl = events.EventHandler()
-    hndl.stop_all_streams_on_error_event = True
 
     def send_event():
         time.sleep(0.01)
@@ -74,6 +73,33 @@ def test_evennt_stream_in_thread_error():
 
     threading.Thread(target=send_event).start()
     strm = hndl.stream()
+    with pytest.raises(Exception):
+        strm.__next__()
+
+
+def test_events_stream_no_throw_errors():
+    hndl = events.EventHandler()
+
+    def send_event():
+        time.sleep(0.01)
+        hndl.emit_error(DummyExcpetion("Test stream event errors"))
+        hndl.emit("test_event")
+
+    threading.Thread(target=send_event).start()
+    strm = hndl.stream(throw_errors=False)
+    assert strm.__next__() is not None
+
+
+def test_events_stream_in_thread_child_error():
+    parent = events.EventHandler()
+    child = events.EventHandler()
+    child.pipe(parent)
+
+    def send_event():
+        child.emit_error(DummyExcpetion("Test stream event errors"))
+
+    strm = parent.stream()
+    threading.Thread(target=send_event).start()
     with pytest.raises(Exception):
         strm.__next__()
 
@@ -197,7 +223,7 @@ async def test_event_handler_event_invalid_arg_list_async():
 
 
 @pytest.mark.asyncio
-async def test_evennt_stream_stop_asyncio():
+async def test_events_stream_stop_asyncio():
     hndl = events.EventHandler()
 
     async def send_event():
@@ -213,7 +239,7 @@ async def test_evennt_stream_stop_asyncio():
 
 
 @pytest.mark.asyncio
-async def test_evennt_stream_preload_asyncio():
+async def test_events_stream_preload_asyncio():
     hndl = events.EventHandler()
     strm = hndl.stream(timeout=0.1, use_async_loop=True)
     hndl.emit("test_event")
@@ -221,7 +247,7 @@ async def test_evennt_stream_preload_asyncio():
 
 
 @pytest.mark.asyncio
-async def test_evennt_stream_in_corutine_asyncio():
+async def test_events_stream_in_corutine_asyncio():
     hndl = events.EventHandler()
     strm = hndl.stream(timeout=0.1, use_async_loop=True)
 
