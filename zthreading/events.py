@@ -1,5 +1,6 @@
 import weakref
 import asyncio
+import logging
 
 from enum import Enum
 from random import randint
@@ -18,7 +19,7 @@ class Event:
 
 
 def get_active_loop() -> asyncio.AbstractEventLoop:
-    """returns the current active asyncio loop or creates 
+    """returns the current active asyncio loop or creates
     a new one.
 
     Returns:
@@ -48,8 +49,11 @@ class EventHandler:
     _pipeto: [] = None
     _action_last_idx = 0
     stop_all_streams_event_name = None
+    stop_all_streams_on_error_event = False
+    warning_event_name = "warning"
+    error_event_name = "error"
 
-    def __init__(self, on_event: Callable = None):
+    def __init__(self, on_event: Callable = None, stop_all_streams_on_error_event=False):
         """An event handler. Allows,
         1. Registering for event callbacks.
         2. Emitting (broadcasting) events.
@@ -62,8 +66,11 @@ class EventHandler:
 
         Args:
             on_event (optional): Called on any event. Defaults to None.
+            stop_all_streams_on_error_event (optional): If true, all streams will be stopped on
+                an error event.
         """
         super().__init__()
+        self.stop_all_streams_on_error_event = stop_all_streams_on_error_event
         self._pipeto = []
         self._event_actions = dict()
         self.on_event = on_event
@@ -75,7 +82,7 @@ class EventHandler:
 
     @staticmethod
     def _get_value_from_reference(val):
-        """Returns the value of a reference or the value itself. 
+        """Returns the value of a reference or the value itself.
         Allows for easy access to weakref objects.
         """
         if isinstance(val, weakref.ReferenceType):
@@ -83,8 +90,7 @@ class EventHandler:
         return val
 
     def _create_object_instance_unique_event_name(self, base_name: str):
-        """Creates a unique name for internal event handling.
-        """
+        """Creates a unique name for internal event handling."""
         return f"{self.__class__.__name__}.{base_name} (oid: {id(self)}, rid:{randint(0,10000)})"
 
     def on_any_event(self, action: Callable) -> int:
@@ -182,8 +188,7 @@ class EventHandler:
         return True
 
     def _get_event_actions_by_name(self, name: str) -> List[Callable]:
-        """Internal. Retruns all the events actions by name.
-        """
+        """Internal. Retruns all the events actions by name."""
         if self._event_actions_search_by_name is None or name not in self._event_actions_search_by_name:
             self._event_actions_search_by_name = self._event_actions_search_by_name or dict()
 
@@ -195,15 +200,13 @@ class EventHandler:
         return self._event_actions_search_by_name[name]
 
     def _get_catch_all_event_actions(self, original_event_name: str):
-        """Internal gets all catch all events actions by name,
-        """
+        """Internal gets all catch all events actions by name,"""
         if original_event_name != self.catch_all_event_name and self.hasEvent(self.catch_all_event_name):
             return list(self._event_actions[self.catch_all_event_name].values())
         return []
 
     def _get_pipe_handlers(self) -> List["EventHandler"]:
-        """Get all pipe handlers to propagate events.
-        """
+        """Get all pipe handlers to propagate events."""
         handlers = []
         needs_pipe_cleaning = False
         for hndl in self._pipeto:
@@ -221,8 +224,7 @@ class EventHandler:
 
     @classmethod
     def _process_in_thread_event_action_result(cls, action_result, debug: bool = None):
-        """Call to await (if possible) aysncio results.
-        """
+        """Call to await (if possible) aysncio results."""
         if asyncio.iscoroutine(action_result):
             loop = get_active_loop()
             if loop.is_running():
@@ -262,6 +264,34 @@ class EventHandler:
 
         for handler in self._get_pipe_handlers():
             self._process_in_thread_event_action_result(handler.emit(name, *args, **kwargs))
+
+        if self.stop_all_streams_on_error_event and name == self.error_event_name:
+            self.stop_all_streams()
+
+    def bind_logger(self, logger=logging):
+        """Binds a logger to show warnings and errors. Event handler.
+
+        Args:
+            logger (logging): the logger to bind
+        """
+        self.on(self.error_event_name, lambda h, err: logger.error(err))
+        self.on(self.warning_event_name, lambda h, wrn: logger.warning(wrn))
+
+    def emit_error(self, err):
+        """Emit an error.
+
+        Args:
+            err (Exception): The error to emit
+        """
+        self.emit(self.error_event_name, self, err)
+
+    def emit_warning(self, warning):
+        """Emit a warning.
+
+        Args:
+            err (Exception): The warning to emit.
+        """
+        self.emit(self.warning_event_name, warning)
 
     def pipe(self, other: "EventHandler", use_weak_reference: bool = False):
         """Pipe all events emitted from this handler to another handler.
@@ -355,22 +385,21 @@ class EventHandler:
 
     def stop_all_streams(self):
         """Invokes an interanl events that stops any event streams that were opened.
-        When a steam is stopped, its yield command becomes unblocking. 
-        
+        When a steam is stopped, its yield command becomes unblocking.
+
         For the case of a loop, it would exit, eg,
-        
+
         Example:
 
             for a in my_stream:
                 ....
-            
+
             hndl.stop_all_steams -> will exit loop.
         """
         self.emit(self.stop_all_streams_event_name)
 
     def _prepare_stream_queue(self, event_name: str = None) -> (Queue, "EventHandler"):
-        """Internal, prepare a stream internal queue to manage events.
-        """
+        """Internal, prepare a stream internal queue to manage events."""
         pipe_handler = EventHandler()
         queue = Queue()
 
@@ -388,8 +417,7 @@ class EventHandler:
         return queue, pipe_handler
 
     def _get_queue_event(self, queue: Queue, timeout: float) -> Event:
-        """Internal. Get next queued event, with timeout.
-        """
+        """Internal. Get next queued event, with timeout."""
         try:
             event = queue.get(block=True, timeout=timeout)
         except Empty:
@@ -418,9 +446,23 @@ class EventHandler:
         Yields:
             Generator of Event.
         """
+        errors = []
+        warnings = []
+
+        error_handler = EventHandler()
+        self.pipe(error_handler, use_weak_reference=True)
+
+        error_handler.on(self.error_event_name, lambda h, err: errors.append(err))
+        error_handler.on(self.warning_event_name, lambda h, wrn: warnings.append(wrn))
+
         while True:
             ev: Event = self._get_queue_event(queue, timeout)
             if ev.name == self.stop_all_streams_event_name:
+                if len(errors) > 0:
+                    if len(errors) == 1:
+                        raise errors[0]
+                    else:
+                        raise Exception("Multiple errors occurred while streaming", *errors)
                 break
             if process_event_data is not None:
                 ev = process_event_data(ev)
@@ -486,7 +528,11 @@ class EventHandler:
         return self._create_stream(queue, pipe_handler, timeout, process_event_data)
 
     def wait_for(
-        self, predict, raise_errors: bool = True, wait_count: int = 1, timeout: float = None,
+        self,
+        predict,
+        raise_errors: bool = True,
+        wait_count: int = 1,
+        timeout: float = None,
     ):
         """Waits for a specific event to be invoked.
 
@@ -566,7 +612,8 @@ class EventHandler:
             )
             pipes.append(pipe_handler)
             handler.pipe(
-                pipe_handler, use_weak_reference=True,
+                pipe_handler,
+                use_weak_reference=True,
             )
 
         for handler in handlers:
@@ -602,8 +649,7 @@ class AsyncEventHandler(EventHandler):
 
     @classmethod
     async def _process_async_action_result(cls, action_result):
-        """Call to await (if needed) aysncio results.
-        """
+        """Call to await (if needed) aysncio results."""
         if asyncio.iscoroutine(action_result):
             return await action_result
         else:
@@ -635,6 +681,9 @@ class AsyncEventHandler(EventHandler):
 
         for handler in self._get_pipe_handlers():
             await self._process_async_action_result(handler.emit(name, *args, **kwargs))
+
+        if self.stop_all_streams_on_error_event and name == self.error_event_name:
+            self.stop_all_streams()
 
     def emit_sync(self, name: str, *args, **kwargs):
         """Synchronically emits an event. Any arguments sent after name, will

@@ -64,6 +64,20 @@ def test_evennt_stream_in_thread():
     assert strm.__next__() is not None
 
 
+def test_evennt_stream_in_thread_error():
+    hndl = events.EventHandler()
+    hndl.stop_all_streams_on_error_event = True
+
+    def send_event():
+        time.sleep(0.01)
+        hndl.emit_error(DummyExcpetion("Test stream event errors"))
+
+    threading.Thread(target=send_event).start()
+    strm = hndl.stream()
+    with pytest.raises(Exception):
+        strm.__next__()
+
+
 def test_events_streams_using_threads():
     hndl = events.EventHandler()
 

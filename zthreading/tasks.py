@@ -9,7 +9,8 @@ from typing import List, Callable
 
 from zthreading.events import EventHandler, get_active_loop
 
-def get_asyncio_future_event_loop(task:asyncio.Task):
+
+def get_asyncio_future_event_loop(task: asyncio.Task):
     if hasattr(task, "get_loop"):
         return task.get_loop()
     else:
@@ -56,8 +57,7 @@ def wait_for_future(future: asyncio.Future, timeout: float = None):
 
 
 class TaskOperationException(Exception):
-    """A general class for task operation errors.
-    """
+    """A general class for task operation errors."""
 
     pass
 
@@ -79,7 +79,7 @@ class Task(EventHandler):
 
         Args:
             action (Callable): The action to execute.
-            use_async_loop (bool, optional): If true use an asyncio thread to execute the action otherwise uses 
+            use_async_loop (bool, optional): If true use an asyncio thread to execute the action otherwise uses
                 the a system thread. Defaults to the environment variable TASKS_DEFAULT_TO_ASYNC_LOOP, or false.
             use_daemon_thread (bool, optional): If true, and is using system threading, starts the task in daemon mode.
                 Defaults to True.
@@ -112,8 +112,7 @@ class Task(EventHandler):
 
     @property
     def use_async_loop(self) -> bool:
-        """If true uses asyncio to execute threads.
-        """
+        """If true uses asyncio to execute threads."""
         return self._use_async_loop
 
     @property
@@ -168,7 +167,7 @@ class Task(EventHandler):
             self.emit(self.event_name)
         except Exception as ex:
             self._error = ex
-            self.emit("error", self, ex)
+            self.emit_error(ex)
         finally:
             self._completed_at = datetime.now()
             self.stop_all_streams()
@@ -186,7 +185,7 @@ class Task(EventHandler):
                 self.emit(self.event_name)
         except Exception as ex:
             self._error = ex
-            self.emit("error", self, ex)
+            self.emit_error(ex)
         finally:
             self._completed_at = datetime.now()
             self.stop_all_streams()
@@ -235,7 +234,10 @@ class Task(EventHandler):
             abort_executing_thread(self._thread)
 
     def join(
-        self, timeout: float = None, raise_last_exception: bool = True, throw_error_if_not_running: bool = False,
+        self,
+        timeout: float = None,
+        raise_last_exception: bool = True,
+        throw_error_if_not_running: bool = False,
     ):
         """Wait for the task to complete.
 
@@ -380,7 +382,7 @@ class Task(EventHandler):
         """Helper method. Gets the description of a thread.
 
         Args:
-            thread (threading.Thread, optional): The thread to get the description for. Defaults to None. 
+            thread (threading.Thread, optional): The thread to get the description for. Defaults to None.
                 If None use current thread.
 
         Returns:
