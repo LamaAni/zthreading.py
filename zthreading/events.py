@@ -1,6 +1,7 @@
 import weakref
 import asyncio
 import logging
+import threading
 
 from enum import Enum
 from random import randint
@@ -25,9 +26,7 @@ def get_active_loop() -> asyncio.AbstractEventLoop:
     Returns:
         asyncio.AbstractEventLoop
     """
-    loop = asyncio.events._get_running_loop()
-    loop = asyncio.new_event_loop() if loop is None else loop
-    return loop
+    return INTERNALAsyncioExecutionThread.get_loop()
 
 
 def filter_events_predict(name: str, args: list, kwargs: dict) -> bool:
@@ -668,6 +667,38 @@ class AsyncEventHandler(EventHandler):
             name {str} -- The name of the event to emit.
         """
         self._process_in_thread_event_action_result(self.emit(name, *args, **kwargs))
+
+
+class INTERNALAsyncioExecutionThread(EventHandler):
+    """INTERNAL use only!"""
+
+    _global_object: "INTERNALAsyncioExecutionThread" = None
+
+    def __init__(self):
+        super().__init__()
+        self.loop: asyncio.AbstractEventLoop = None
+        threading.Thread(
+            target=self._global_loop,
+            name=f"EventHandler asyncio global loop {id(self)}",
+            daemon=True,
+        ).start()
+
+    @classmethod
+    def get_loop(cls):
+        if cls._global_object == None:
+            cls._global_object = INTERNALAsyncioExecutionThread()
+            cls._global_object.wait_for("initialized")
+        return cls._global_object.loop
+
+    def _global_loop(self):
+        try:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            self.loop.thread = self
+            self.emit("initialized")
+            self.loop.run_forever()
+        except Exception as ex:
+            self.emit_error(ex)
 
 
 if __name__ == "__main__":

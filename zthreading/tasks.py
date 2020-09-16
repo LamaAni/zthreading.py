@@ -1,20 +1,24 @@
+from asyncio.events import set_event_loop
 import os
+from os import wait
+import queue
 import sys
 import threading
 import asyncio
 
-from datetime import datetime
-from queue import Empty
+from datetime import datetime, time
+from queue import Empty, Queue
 from typing import List, Callable
 
 from zthreading.events import EventHandler, get_active_loop
 
-
-def get_asyncio_future_event_loop(task: asyncio.Task):
-    if hasattr(task, "get_loop"):
-        return task.get_loop()
-    else:
-        return task._loop
+# def get_asyncio_future_event_loop(future: asyncio.Future):
+#     if hasattr(future, "get_loop"):
+#         return future.get_loop()
+#     elif hasattr(future, "_loop"):
+#         return future._loop
+#     else:
+#         return get_active_loop()
 
 
 def abort_executing_thread(thread: threading.Thread):
@@ -38,22 +42,32 @@ def wait_for_future(future: asyncio.Future, timeout: float = None):
     Returns:
         any: The future result.
     """
-    if asyncio.iscoroutine(future):
-        loop = get_active_loop()
-        future = loop.create_task(future)
-    else:
-        loop = get_asyncio_future_event_loop(future)
 
-    if timeout is not None:
-        future = asyncio.wait_for(future, timeout=timeout, loop=loop)
+    assert asyncio.iscoroutine(future) or asyncio.isfuture(future), ValueError(
+        "future must be a coroutine or of type asyncio.Future"
+    )
 
-    loop.run_until_complete(future)
+    rslt = None
+    error: Exception = None
+    queue = Queue()
 
-    last_exception = future.exception()
-    if last_exception is not None:
-        raise last_exception
+    async def do_wait():
+        nonlocal error
+        nonlocal rslt
+        try:
+            rslt = await asyncio.wait_for(future, timeout=timeout)
+        except Exception as err:
+            error = err
+        queue.put(True)
 
-    return future.result()
+    asyncio.run_coroutine_threadsafe(do_wait(), loop=get_active_loop())
+
+    queue.get(block=True)
+
+    if error is not None:
+        raise error
+
+    return rslt
 
 
 class TaskOperationException(Exception):
@@ -99,7 +113,7 @@ class Task(EventHandler):
         self.action = action
         self._use_async_loop = use_async_loop or self.TASKS_DEFAULT_TO_ASYNC_LOOP
         self._thread: threading.Thread = None
-        self._async_loop_task: asyncio.Future = None
+        self._async_loop_future: asyncio.Future = None
         self._use_daemon_thread: bool = use_daemon_thread
         self._completed_at = None
         self._action_result = None
@@ -116,15 +130,10 @@ class Task(EventHandler):
         return self._use_async_loop
 
     @property
-    def async_task(self):
-        """The asyncio current executing task or None."""
-        return self._async_loop_task
-
-    @property
     def is_running(self) -> bool:
         """If true is currently running"""
         if self.use_async_loop:
-            return self._async_loop_task is not None and not self._async_loop_task.done()
+            return self._async_loop_future is not None and not self._async_loop_future.done()
         else:
             return self._thread is not None and self._thread.is_alive()
 
@@ -203,7 +212,10 @@ class Task(EventHandler):
             executor = Task(lambda arg: print("ok "+arg)).start("my arg")
         """
         if self.use_async_loop:
-            self._async_loop_task = asyncio.ensure_future(self._run_as_async(args, kwargs), loop=get_active_loop())
+            self._async_loop_future = asyncio.run_coroutine_threadsafe(
+                self._run_as_async(args, kwargs),
+                loop=get_active_loop(),
+            )
         else:
             self._thread = threading.Thread(
                 target=lambda: self._run_as_thread(args, kwargs),
@@ -229,7 +241,7 @@ class Task(EventHandler):
             self.join(timeout)
 
         if self.use_async_loop:
-            self.async_task.cancel()
+            self._async_loop_future.cancel()
         else:
             abort_executing_thread(self._thread)
 
@@ -255,7 +267,7 @@ class Task(EventHandler):
 
         if self.is_running:
             if self.use_async_loop:
-                wait_for_future(self.async_task, timeout)
+                wait_for_future(self._async_loop_future, timeout)
             # FIXME: Maybe there is a better approach here. Should raise error?
             elif self._thread.is_alive() and threading.currentThread() != self._thread:
                 self._thread.join(timeout)
@@ -393,7 +405,7 @@ class Task(EventHandler):
 
     def __str__(self):
         if self.use_async_loop:
-            return f"async_task ({self._thread_name})"
+            return f"asyncio ({self._thread_name})"
         return self.get_thread_description(self)
 
 

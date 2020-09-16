@@ -1,6 +1,6 @@
+from datetime import date, datetime
 import pytest
 import asyncio
-import threading
 import time
 from zthreading import events
 from zthreading.tasks import Task
@@ -58,7 +58,7 @@ def test_events_stream_in_thread():
         time.sleep(0.01)
         hndl.emit("test_event")
 
-    threading.Thread(target=send_event).start()
+    Task(send_event).start()
     strm = hndl.stream(timeout=0.1)
 
     assert strm.__next__() is not None
@@ -71,7 +71,7 @@ def test_events_stream_in_thread_error():
         time.sleep(0.01)
         hndl.emit_error(DummyExcpetion("Test stream event errors"))
 
-    threading.Thread(target=send_event).start()
+    Task(send_event).start()
     strm = hndl.stream()
     with pytest.raises(Exception):
         strm.__next__()
@@ -85,7 +85,7 @@ def test_events_stream_no_throw_errors():
         hndl.emit_error(DummyExcpetion("Test stream event errors"))
         hndl.emit("test_event")
 
-    threading.Thread(target=send_event).start()
+    Task(send_event).start()
     strm = hndl.stream(throw_errors=False)
     assert strm.__next__() is not None
 
@@ -99,7 +99,7 @@ def test_events_stream_in_thread_child_error():
         child.emit_error(DummyExcpetion("Test stream event errors"))
 
     strm = parent.stream()
-    threading.Thread(target=send_event).start()
+    Task(send_event).start()
     with pytest.raises(Exception):
         strm.__next__()
 
@@ -226,12 +226,31 @@ async def test_event_handler_event_invalid_arg_list_async():
 async def test_events_stream_stop_asyncio():
     hndl = events.EventHandler()
 
+    started = datetime.now()
+
     async def send_event():
+        elapsed = datetime.now() - started
         await asyncio.sleep(0.01)
         hndl.stop_all_streams()
 
     # asyncio will not work here :)
     Task(send_event).start()
+    strm = hndl.stream(timeout=1)
+
+    for v in strm:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_events_stream_stop_asyncio_from_asyncio():
+    hndl = events.EventHandler()
+
+    async def send_event():
+        await asyncio.sleep(0.01)
+        hndl.stop_all_streams()
+
+    # asyncio will not work here :)
+    Task(send_event, use_async_loop=True).start()
     strm = hndl.stream(timeout=1)
 
     for v in strm:
@@ -261,5 +280,33 @@ async def test_events_stream_in_corutine_asyncio():
     assert rslt is not None
 
 
+@pytest.mark.asyncio
+async def test_wait_for_events_in_corutine():
+    async def send_event():
+        time.sleep(0.1)
+        raise DummyExcpetion()
+
+    task = Task(send_event).start()
+
+    with pytest.raises(DummyExcpetion):
+        task.wait_for_events(lambda sender, name, *args: name == "test_event", [task], timeout=1)
+
+
+@pytest.mark.asyncio
+def test_events_stream_error_in_corutine():
+    hndl = events.EventHandler()
+
+    def send_event():
+        hndl.emit_error(DummyExcpetion("Test stream event errors"))
+
+    strm = hndl.stream()
+    Task(send_event, use_async_loop=True).start()
+
+    with pytest.raises(Exception):
+        strm.__next__()
+
+
 if __name__ == "__main__":
-    pytest.main(["-x", __file__])
+    Task(test_events_stream_stop_asyncio).start().join()
+    # test_events_stream_error_in_corutine()
+    # pytest.main(["-x", __file__])
