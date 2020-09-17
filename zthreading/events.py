@@ -230,6 +230,17 @@ class EventHandler:
         else:
             action_result
 
+    def _execute_event_action(self, action, *args, **kwargs):
+        action: Callable = self._get_value_from_reference(action)
+        assert isinstance(action, Callable), "Event action is not a callable"
+        try:
+            self._process_in_thread_event_action_result(action(*args, **kwargs))
+        except TypeError as err:
+            action_error = f'Failed to execute action @ File "{action.__code__.co_filename}", line {action.__code__.co_firstlineno}'
+            raise Exception(action_error + ": " + str(err))
+        except Exception as ex:
+            raise ex
+
     def emit(self, name: str, *args, **kwargs):
         """Emits an event. Any arguments sent after name, will
         be passed to the event action.
@@ -250,13 +261,11 @@ class EventHandler:
 
         for action in self._get_event_actions_by_name(name):
             # actions are not automatically removed.
-            action = self._get_value_from_reference(action)
-            self._process_in_thread_event_action_result(action(*args, **kwargs))
+            self._execute_event_action(action, *args, **kwargs)
 
         for action in self._get_catch_all_event_actions(name):
             # actions are not automatically removed.
-            action = self._get_value_from_reference(action)
-            self._process_in_thread_event_action_result(action(name, *args, **kwargs))
+            self._execute_event_action(action, name, *args, **kwargs)
 
         for handler in self._get_pipe_handlers():
             self._process_in_thread_event_action_result(handler.emit(name, *args, **kwargs))
@@ -633,6 +642,17 @@ class AsyncEventHandler(EventHandler):
         else:
             return action_result
 
+    async def _execute_event_action(self, action, *args, **kwargs):
+        action: Callable = self._get_value_from_reference(action)
+        assert isinstance(action, Callable), "Event action is not a callable"
+        try:
+            await self._process_async_action_result(action(*args, **kwargs))
+        except TypeError as err:
+            action_error = f'Failed to execute action @ File "{action.__code__.co_filename}", line {action.__code__.co_firstlineno}'
+            raise Exception(action_error + ": " + str(err))
+        except Exception as ex:
+            raise ex
+
     async def emit(self, name: str, *args, **kwargs):
         """A-Synchronically emits an event. Any arguments sent after name, will
         be passed to the event action.
@@ -649,13 +669,11 @@ class AsyncEventHandler(EventHandler):
 
         for action in self._get_event_actions_by_name(name):
             # actions are not automatically removed.
-            action = self._get_value_from_reference(action)
-            await self._process_async_action_result(action(*args, **kwargs))
+            await self._execute_event_action(action, *args, **kwargs)
 
         for action in self._get_catch_all_event_actions(name):
             # actions are not automatically removed.
-            action = self._get_value_from_reference(action)
-            await self._process_async_action_result(action(name, *args, **kwargs))
+            await self._execute_event_action(action, name, *args, **kwargs)
 
         for handler in self._get_pipe_handlers():
             await self._process_async_action_result(handler.emit(name, *args, **kwargs))
