@@ -648,8 +648,9 @@ class AsyncEventHandler(EventHandler):
         try:
             await self._process_async_action_result(action(*args, **kwargs))
         except TypeError as err:
-            action_error = f'Failed to execute action @ File "{action.__code__.co_filename}", line {action.__code__.co_firstlineno}'
-            raise Exception(action_error + ": " + str(err))
+            action_error = f'Failed to execute action @ File "{action.__code__.co_filename}", line {action.__code__.co_firstlineno} '
+            err.args = (*err.args, action_error)
+            raise err
         except Exception as ex:
             raise ex
 
