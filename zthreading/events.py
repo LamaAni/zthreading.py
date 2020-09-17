@@ -580,7 +580,7 @@ class EventHandler:
             if predict is None or predict(handler, name, *args, **kwargs):
                 matched_handlers.append(handler)
             if len(matched_handlers) == wait_count:
-                wait_queue.put("done")
+                wait_queue.put(True)
 
         pipes = []
 

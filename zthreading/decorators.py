@@ -113,8 +113,8 @@ class CollectExecutionCallsContext:
             assert callable(on_error), ValueError("On error must be a callable or a string")
             self.invoke_error = on_error
 
-        self.task.on("error", lambda task, ex: self.on_error(ex))
-        self.task.on("done", lambda *args, **kwargs: self.on_done())
+        self.task.on(self.task.error_event_name, lambda task, ex: self.on_error(ex))
+        self.task.on(self.task.event_name, lambda *args, **kwargs: self.on_done())
 
     def on_done(self):
         self.was_triggered = False
