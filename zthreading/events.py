@@ -258,9 +258,8 @@ class EventHandler:
         self.emit_event(Event(name, args, kwargs, sender=self))
 
     def emit_event(self, event: Event):
-        if self._events_filter is not None:
-            if self._events_filter(event) is not True:
-                return
+        if self._is_event_filtered(event):
+            return
 
         if self.on_event is not None:
             self._process_in_thread_event_action_result(self.on_event(self, event.name, *event.args, **event.kwargs))
@@ -352,6 +351,11 @@ class EventHandler:
 
     def filter_events(self, predict: filter_events_predict):
         self._events_filter = predict
+
+    def _is_event_filtered(self, event: Event):
+        if self._events_filter is None:
+            return False
+        return self._events_filter(event.name, *event.args, **event.kwargs)
 
     @classmethod
     def create_events_filter_pipe(cls, predict: filter_events_predict) -> "EventHandler":
@@ -677,9 +681,8 @@ class AsyncEventHandler(EventHandler):
         await self.emit_event(Event(name, args, kwargs, sender=self))
 
     async def emit_event(self, event: Event):
-        if self._events_filter is not None:
-            if self._events_filter(event) is not True:
-                return
+        if self._is_event_filtered(event):
+            return
 
         if self.on_event is not None:
             await self._process_async_action_result(self.on_event(self, event.name, *event.args, **event.kwargs))
