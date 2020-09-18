@@ -63,7 +63,7 @@ class EventHandler:
             hndl.emit("my event", "my message)
 
         Args:
-            on_event (optional): Called on any event. Defaults to None.
+            on_event (optional, def handler(event:Event) ): Called on any event. Defaults to None.
         """
         super().__init__()
         self._pipeto = []
@@ -235,7 +235,7 @@ class EventHandler:
         try:
             args = event.args
             if add_name:
-                args = [event.name, *args]
+                args = [event.name, *41]
             self._process_in_thread_event_action_result(action(*args, **event.kwargs))
         except TypeError as err:
             action_error = f'Failed to execute action @ File "{action.__code__.co_filename}", line {action.__code__.co_firstlineno} '
@@ -262,7 +262,7 @@ class EventHandler:
             return
 
         if self.on_event is not None:
-            self._process_in_thread_event_action_result(self.on_event(self, event.name, *event.args, **event.kwargs))
+            self._process_in_thread_event_action_result(self.on_event(event))
 
         for action in self._get_event_actions_by_name(event.name):
             # actions are not automatically removed.
@@ -412,19 +412,20 @@ class EventHandler:
 
     def _prepare_stream_queue(self, event_name: str = None) -> (Queue, "EventHandler"):
         """Internal, prepare a stream internal queue to manage events."""
-        pipe_handler = EventHandler()
+
         queue = Queue()
 
-        def append_to_queue(name, *args: list, **kwargs):
-            if event_name is not None and name not in [
+        def append_to_queue(event: Event):
+            if event_name is not None and event.name not in [
                 event_name,
                 self.stop_all_streams_event_name,
                 self.error_event_name,
             ]:
                 return
-            queue.put(Event(name, args, kwargs, sender=self))
+            queue.put(event)
 
-        pipe_handler.on_any_event(append_to_queue)
+        pipe_handler = EventHandler(on_event=append_to_queue)
+
         self.pipe(pipe_handler, use_weak_reference=True)
 
         return queue, pipe_handler
@@ -590,13 +591,13 @@ class EventHandler:
         def stop_on_error(hndl: EventHandler, error):
             nonlocal first_error
             first_error = error
-            wait_queue.put("error")
+            wait_queue.put(False)
 
-        def on_piped_event(handler, name, *args, **kwargs):
-            if name == "error":
-                stop_on_error(handler, args[1])
+        def on_piped_event(handler: EventHandler, event: Event):
+            if event.name == handler.error_event_name:
+                stop_on_error(handler, event.args[1])
                 return
-            if predict is None or predict(handler, name, *args, **kwargs):
+            if predict is None or predict(handler, event.name, event.args, event.kwargs):
                 matched_handlers.append(handler)
             if len(matched_handlers) == wait_count:
                 wait_queue.put(True)
@@ -604,9 +605,7 @@ class EventHandler:
         pipes = []
 
         def bind(handler: EventHandler):
-            pipe_handler = EventHandler(
-                on_event=lambda pipe, name, *args, **kwargs: on_piped_event(handler, name, *args, **kwargs)
-            )
+            pipe_handler = EventHandler(on_event=lambda event: on_piped_event(handler, event))
             pipes.append(pipe_handler)
             handler.pipe(
                 pipe_handler,

@@ -60,7 +60,6 @@ for i in range(1, 20):
 # Environment variables
 
 1. TASKS_DEFAULT_TO_ASYNC_LOOP - If set to "true", will default all tasks to use asyncio.
-1. TASKS_ERROR_EVENT_NAME - The name of the error event, emitted on any task errors. Defaults to "error".
 
 # Advanced Methods and capabilities
 

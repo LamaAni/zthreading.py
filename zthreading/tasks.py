@@ -64,7 +64,6 @@ class TaskOperationException(Exception):
 
 class Task(EventHandler):
     TASKS_DEFAULT_TO_ASYNC_LOOP: bool = os.environ.get("TASKS_DEFAULT_TO_ASYNC_LOOP", "").lower().strip() == "true"
-    TASKS_ERROR_EVENT_NAME: str = os.environ.get("TASKS_ERROR_EVENT_NAME", "error")
 
     def __init__(
         self,
@@ -90,7 +89,6 @@ class Task(EventHandler):
 
         Events:
             [event_name] - when the task is done. (Args: [])
-            "error" or env {TASKS_ERROR_EVENT_NAME} - when the task errors. (Args: [error:Exception])
 
         Note: This object can execute a coroutine in a different thread, and will do so if
             use_async_loop is False.

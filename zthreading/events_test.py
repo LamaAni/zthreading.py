@@ -16,6 +16,23 @@ def test_event_handler_event():
     hndl.emit("test_event")
 
 
+def test_event_handler_pipe():
+    parent = events.EventHandler()
+
+    completed = False
+
+    def check_event_origin(event: events.Event):
+        nonlocal completed
+        completed = True
+        assert event.sender is parent, "Invalid sender for event object"
+
+    child = events.EventHandler(on_event=check_event_origin)
+    parent.pipe(child)
+    parent.emit("check")
+
+    assert completed, "Event did not propagate"
+
+
 def test_event_handler_args():
     hndl = events.EventHandler()
 
@@ -130,7 +147,7 @@ def test_wait_for_self():
 
     # asyncio will not work here :)
     Task(send_event).start()
-    hndl.wait_for("test_event")
+    hndl.wait_for("test_event", timeout=1)
 
 
 def test_wait_for_events():
@@ -263,4 +280,5 @@ async def test_events_stream_in_corutine_asyncio():
 
 if __name__ == "__main__":
     # test_wait_for_self()
+    test_event_handler_pipe()
     pytest.main(["-x", __file__])
