@@ -11,11 +11,12 @@ from typing import Dict, Callable, List, Generator, AsyncGenerator
 
 
 class Event:
-    def __init__(self, name: str, args: list, kwargs: dict):
+    def __init__(self, name: str, args: list, kwargs: dict, sender=None):
         super().__init__()
         self.name = name
         self.args = args
         self.kwargs = kwargs
+        self.sender = sender
 
 
 def get_active_loop() -> asyncio.AbstractEventLoop:
@@ -30,13 +31,11 @@ def get_active_loop() -> asyncio.AbstractEventLoop:
     return loop
 
 
-def filter_events_predict(name: str, args: list, kwargs: dict) -> bool:
+def filter_events_predict(event: Event) -> bool:
     """Allows or denies events from being emitted.
 
     Args:
-        name (str): The name of the event
-        args (list): The argument list
-        kwargs (dict): The named argument list.
+        event (zthreading.events.Event): The event to filer
 
     Returns:
         bool: True if the event is allowed.
@@ -124,7 +123,7 @@ class EventHandler:
         assert isinstance(name, str), ValueError("name must be a string")
         assert callable(action), ValueError("action must be a callable.")
 
-        if not self.hasEvent(name):
+        if not self.has_event(name):
             self._event_actions[name] = dict()
         idx = self._action_last_idx
         self._action_last_idx += 1
@@ -135,7 +134,7 @@ class EventHandler:
 
         return idx
 
-    def hasEvent(self, name: str, index: int = None):
+    def has_event(self, name: str, index: int = None):
         """Returns true if a event action is present
 
         Arguments:
@@ -172,7 +171,7 @@ class EventHandler:
 
         assert isinstance(name, str), ValueError("name must be a string")
 
-        if not self.hasEvent(name):
+        if not self.has_event(name):
             return False
 
         if idx is not None:
@@ -188,7 +187,7 @@ class EventHandler:
         if self._event_actions_search_by_name is None or name not in self._event_actions_search_by_name:
             self._event_actions_search_by_name = self._event_actions_search_by_name or dict()
 
-            if not self.hasEvent(name):
+            if not self.has_event(name):
                 self._event_actions_search_by_name[name] = []
             else:
                 self._event_actions_search_by_name[name] = list(self._event_actions[name].values())
@@ -197,7 +196,7 @@ class EventHandler:
 
     def _get_catch_all_event_actions(self, original_event_name: str):
         """Internal gets all catch all events actions by name,"""
-        if original_event_name != self.catch_all_event_name and self.hasEvent(self.catch_all_event_name):
+        if original_event_name != self.catch_all_event_name and self.has_event(self.catch_all_event_name):
             return list(self._event_actions[self.catch_all_event_name].values())
         return []
 
@@ -230,19 +229,23 @@ class EventHandler:
         else:
             action_result
 
-    def _execute_event_action(self, action, *args, **kwargs):
+    def _execute_event_action(self, action, event: Event, add_name: bool = False):
         action: Callable = self._get_value_from_reference(action)
         assert isinstance(action, Callable), "Event action is not a callable"
         try:
-            self._process_in_thread_event_action_result(action(*args, **kwargs))
+            args = event.args
+            if add_name:
+                args = [event.name, *args]
+            self._process_in_thread_event_action_result(action(*args, **event.kwargs))
         except TypeError as err:
-            action_error = f'Failed to execute action @ File "{action.__code__.co_filename}", line {action.__code__.co_firstlineno}'
-            raise Exception(action_error + ": " + str(err))
+            action_error = f'Failed to execute action @ File "{action.__code__.co_filename}", line {action.__code__.co_firstlineno} '
+            err.args = (*err.args, action_error)
+            raise err
         except Exception as ex:
             raise ex
 
     def emit(self, name: str, *args, **kwargs):
-        """Emits an event. Any arguments sent after name, will
+        """A-Synchronically emits an event. Any arguments sent after name, will
         be passed to the event action.
 
         Arguments:
@@ -252,23 +255,26 @@ class EventHandler:
             name = str(name)
         assert isinstance(name, str), ValueError("name must be a string")
 
+        self.emit_event(Event(name, args, kwargs, sender=self))
+
+    def emit_event(self, event: Event):
         if self._events_filter is not None:
-            if self._events_filter(name, args, kwargs) is not True:
+            if self._events_filter(event) is not True:
                 return
 
         if self.on_event is not None:
-            self._process_in_thread_event_action_result(self.on_event(self, name, *args, **kwargs))
+            self._process_in_thread_event_action_result(self.on_event(self, event.name, *event.args, **event.kwargs))
 
-        for action in self._get_event_actions_by_name(name):
+        for action in self._get_event_actions_by_name(event.name):
             # actions are not automatically removed.
-            self._execute_event_action(action, *args, **kwargs)
+            self._execute_event_action(action, event)
 
-        for action in self._get_catch_all_event_actions(name):
+        for action in self._get_catch_all_event_actions(event.name):
             # actions are not automatically removed.
-            self._execute_event_action(action, name, *args, **kwargs)
+            self._execute_event_action(action, event, add_name=True)
 
         for handler in self._get_pipe_handlers():
-            self._process_in_thread_event_action_result(handler.emit(name, *args, **kwargs))
+            self._process_in_thread_event_action_result(handler.emit_event(event))
 
     def bind_logger(self, logger=logging):
         """Binds a logger to show warnings and errors. Event handler.
@@ -412,7 +418,7 @@ class EventHandler:
                 self.error_event_name,
             ]:
                 return
-            queue.put(Event(name, args, kwargs))
+            queue.put(Event(name, args, kwargs, sender=self))
 
         pipe_handler.on_any_event(append_to_queue)
         self.pipe(pipe_handler, use_weak_reference=True)
@@ -642,11 +648,14 @@ class AsyncEventHandler(EventHandler):
         else:
             return action_result
 
-    async def _execute_event_action(self, action, *args, **kwargs):
+    async def _execute_event_action(self, action, event: Event, add_name: bool = False):
         action: Callable = self._get_value_from_reference(action)
         assert isinstance(action, Callable), "Event action is not a callable"
         try:
-            await self._process_async_action_result(action(*args, **kwargs))
+            args = event.args
+            if add_name:
+                args = [event.name, *args]
+            await self._process_async_action_result(action(*args, **event.kwargs))
         except TypeError as err:
             action_error = f'Failed to execute action @ File "{action.__code__.co_filename}", line {action.__code__.co_firstlineno} '
             err.args = (*err.args, action_error)
@@ -665,19 +674,26 @@ class AsyncEventHandler(EventHandler):
             name = str(name)
         assert isinstance(name, str), ValueError("name must be a string")
 
+        await self.emit_event(Event(name, args, kwargs, sender=self))
+
+    async def emit_event(self, event: Event):
+        if self._events_filter is not None:
+            if self._events_filter(event) is not True:
+                return
+
         if self.on_event is not None:
-            await self._process_async_action_result(self.on_event(name, *args, **kwargs))
+            await self._process_async_action_result(self.on_event(self, event.name, *event.args, **event.kwargs))
 
-        for action in self._get_event_actions_by_name(name):
+        for action in self._get_event_actions_by_name(event.name):
             # actions are not automatically removed.
-            await self._execute_event_action(action, *args, **kwargs)
+            await self._execute_event_action(action, event)
 
-        for action in self._get_catch_all_event_actions(name):
+        for action in self._get_catch_all_event_actions(event.name):
             # actions are not automatically removed.
-            await self._execute_event_action(action, name, *args, **kwargs)
+            await self._execute_event_action(action, event, add_name=True)
 
         for handler in self._get_pipe_handlers():
-            await self._process_async_action_result(handler.emit(name, *args, **kwargs))
+            await self._process_async_action_result(handler.emit_event(event))
 
     def emit_sync(self, name: str, *args, **kwargs):
         """Synchronically emits an event. Any arguments sent after name, will

@@ -130,7 +130,7 @@ def test_wait_for_self():
 
     # asyncio will not work here :)
     Task(send_event).start()
-    hndl.wait_for("test_event", timeout=1)
+    hndl.wait_for("test_event")
 
 
 def test_wait_for_events():
@@ -262,4 +262,5 @@ async def test_events_stream_in_corutine_asyncio():
 
 
 if __name__ == "__main__":
+    # test_wait_for_self()
     pytest.main(["-x", __file__])
