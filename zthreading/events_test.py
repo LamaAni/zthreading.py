@@ -68,6 +68,15 @@ def test_events_stream_preload():
     assert strm.__next__() is not None
 
 
+def test_events_with_multiple_allowed_stream_preload():
+    hndl = events.EventHandler()
+    strm = hndl.stream(["a", "b"], timeout=0.1)
+    hndl.emit("a")
+    hndl.emit("b")
+    assert strm.__next__().name == "a"
+    assert strm.__next__().name == "b"
+
+
 def test_events_stream_in_thread():
     hndl = events.EventHandler()
 
@@ -274,11 +283,8 @@ async def test_events_stream_in_corutine_asyncio():
 
     Task(send_event).start()
     await asyncio.sleep(0.01)  # allow the other task to execute.
-    rslt = await strm.__anext__()
-    assert rslt is not None
+    assert (await strm.__anext__()).name == "test_event"
 
 
 if __name__ == "__main__":
-    # test_wait_for_self()
-    test_event_handler_pipe()
     pytest.main(["-x", __file__])

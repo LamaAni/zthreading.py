@@ -410,17 +410,22 @@ class EventHandler:
         """
         self.emit(self.stop_all_streams_event_name)
 
-    def _prepare_stream_queue(self, event_name: str = None) -> (Queue, "EventHandler"):
+    def _prepare_stream_queue(
+        self,
+        event_names: List[str] = None,
+        allow_all_events=False,
+    ) -> (Queue, "EventHandler"):
         """Internal, prepare a stream internal queue to manage events."""
-
         queue = Queue()
 
+        allowed_events = (
+            None
+            if event_names is None
+            else set(event_names + [self.stop_all_streams_event_name, self.error_event_name])
+        )
+
         def append_to_queue(event: Event):
-            if event_name is not None and event.name not in [
-                event_name,
-                self.stop_all_streams_event_name,
-                self.error_event_name,
-            ]:
+            if allowed_events is not None and event.name not in allowed_events:
                 return
             queue.put(event)
 
@@ -503,8 +508,11 @@ class EventHandler:
         if isinstance(event_name, Enum):
             event_name = str(event_name)
 
-        assert event_name is None or isinstance(event_name, str), ValueError(
-            "event_name must be either a string or None"
+        if event_name is not None and not isinstance(event_name, list):
+            event_name = [event_name]
+
+        assert event_name is None or all([isinstance(v, str) for v in event_name]), ValueError(
+            "event_name must be either a string, a list of strings or None"
         )
 
         queue, pipe_handler = self._prepare_stream_queue(event_name)
