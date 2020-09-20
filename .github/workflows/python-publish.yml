@@ -17,12 +17,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install setuptools wheel twine
+          pip install setuptools wheel twine pytest
       - name: Prepare version
         run: |
           echo "Version number: ${GITHUB_REF##*/}"
           echo "${GITHUB_REF##*/}" > package_version.txt || exit $?
           ls
+        env:
+          GITHUB_BRANCH: ${{ github.ref }}
+      - name: Run pytest
+        run: |
+          pytest ./zthreading
         env:
           GITHUB_BRANCH: ${{ github.ref }}
       - name: Build and publish
