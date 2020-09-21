@@ -159,6 +159,42 @@ def test_wait_for_self():
     hndl.wait_for("test_event", timeout=1)
 
 
+def test_wait_for_self_with_predict_error():
+    hndl = events.EventHandler()
+
+    def send_event():
+        time.sleep(0.1)
+        hndl.emit("test_event")
+
+    def predict(sender: events.EventHandler, event: events.Event):
+        raise DummyExcpetion("error")
+
+    # asyncio will not work here :)
+    Task(send_event).start()
+    with pytest.raises(DummyExcpetion):
+        hndl.wait_for(predict, timeout=1)
+
+
+def test_wait_for_self_predict():
+    parent = events.EventHandler()
+    child = events.EventHandler()
+
+    parent.pipe(child)
+
+    def send_event():
+        time.sleep(0.1)
+        parent.emit("test_event", 22)
+
+    def predict(sender: events.EventHandler, event: events.Event):
+        assert sender != event.sender
+        assert event.name == "test_event"
+        return True
+
+    # asyncio will not work here :)
+    Task(send_event).start()
+    child.wait_for(predict=predict, timeout=1)
+
+
 def test_wait_for_events():
     hndl = events.EventHandler()
 
@@ -192,7 +228,7 @@ def test_wait_for_events_predict():
         hndl.emit("test_event")
 
     Task(send_event).start()
-    rslt = hndl.wait_for_events(lambda sender, name, *args: name == "test_event", [hndl], timeout=1)
+    rslt = hndl.wait_for_events(lambda sender, event: event.name == "test_event", [hndl], timeout=1)
     assert rslt[0] is hndl, "Did not return correct handler"
 
 

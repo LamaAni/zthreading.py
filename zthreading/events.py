@@ -585,8 +585,8 @@ class EventHandler:
         if predict is not None and not isinstance(predict, Callable):
             predict_equals = predict
 
-            def predict_event_by_name(sender: EventHandler, name: str, *args, **kwargs):
-                return name == predict_equals
+            def predict_event_by_name(sender: EventHandler, event: Event):
+                return event.name == predict_equals
 
             predict = predict_event_by_name
 
@@ -605,10 +605,13 @@ class EventHandler:
             if event.name == handler.error_event_name:
                 stop_on_error(handler, event.args[1])
                 return
-            if predict is None or predict(handler, event.name, event.args, event.kwargs):
-                matched_handlers.append(handler)
-            if len(matched_handlers) == wait_count:
-                wait_queue.put(True)
+            try:
+                if predict is None or predict(handler, event):
+                    matched_handlers.append(handler)
+                if len(matched_handlers) == wait_count:
+                    wait_queue.put(True)
+            except Exception as err:
+                stop_on_error(handler, err)
 
         pipes = []
 

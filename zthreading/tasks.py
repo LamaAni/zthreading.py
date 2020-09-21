@@ -7,7 +7,7 @@ from datetime import datetime
 from queue import Empty
 from typing import List, Callable
 
-from zthreading.events import EventHandler, get_active_loop
+from zthreading.events import EventHandler, get_active_loop, Event
 
 
 def get_asyncio_future_event_loop(task: asyncio.Task):
@@ -346,8 +346,8 @@ class Task(EventHandler):
         if len(matched_tasks) >= wait_count:
             return matched_tasks[:wait_count]
 
-        def predict_task_done(task: Task, name, *args, **kwargs):
-            return name == task.event_name
+        def predict_task_done(task: Task, event: Event):
+            return event.name == task.event_name
 
         matched_tasks.extend(
             Task.wait_for_events(
