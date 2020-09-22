@@ -552,7 +552,7 @@ class EventHandler:
         Returns:
             The list of tasks sent to the method.
         """
-        self.wait_for_events(predict, [self], raise_errors=raise_errors, wait_count=wait_count, timeout=timeout)
+        return self.wait_for_events(predict, [self], raise_errors=raise_errors, wait_count=wait_count, timeout=timeout)
 
     @classmethod
     def wait_for_events(
@@ -631,8 +631,10 @@ class EventHandler:
         except Empty:
             first_error = TimeoutError(f"Timeout while waiting for event: {predict}")
 
-        if first_error is not None:
+        if raise_errors and first_error is not None:
             raise first_error
+        elif first_error is not None:
+            return first_error
 
         return matched_handlers
 

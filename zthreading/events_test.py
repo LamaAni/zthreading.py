@@ -195,6 +195,36 @@ def test_wait_for_self_predict():
     child.wait_for(predict=predict, timeout=1)
 
 
+def test_wait_for_self_emit_error():
+    parent = events.EventHandler()
+    child = events.EventHandler()
+
+    parent.pipe(child)
+
+    def send_event():
+        time.sleep(0.1)
+        parent.emit_error(DummyExcpetion("from parent"))
+
+    Task(send_event).start()
+    with pytest.raises(DummyExcpetion):
+        child.wait_for("test_event", timeout=1)
+
+
+def test_wait_for_self_emit_error_no_raise():
+    parent = events.EventHandler()
+    child = events.EventHandler()
+
+    parent.pipe(child)
+
+    def send_event():
+        time.sleep(0.1)
+        parent.emit_error(DummyExcpetion("from parent"))
+
+    Task(send_event).start()
+    rsp = child.wait_for("test_event", timeout=1, raise_errors=False)
+    assert isinstance(rsp, DummyExcpetion)
+
+
 def test_wait_for_events():
     hndl = events.EventHandler()
 
