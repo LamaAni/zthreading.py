@@ -6,6 +6,7 @@ from functools import wraps
 from typing import Callable, Union
 from weakref import WeakKeyDictionary
 from zthreading.tasks import Task, TaskOperationException
+from zthreading.thread_queue import Queue
 
 
 class ThreadSafeContextException(TaskOperationException):
@@ -108,6 +109,7 @@ class CollectExecutionCallsContext:
         fun,
         on_error: str = None,
         use_daemon_thread: bool = True,
+        ignore_waiting_calls_timeout: Union[timedelta, float] = None,
     ):
         super().__init__()
         thread_name = f"ccc_async::{fun.__module__}::{fun.__qualname__}"
@@ -118,6 +120,16 @@ class CollectExecutionCallsContext:
         self.was_triggered = False
         self.parent = parent
         self.invoke_error: Callable = None
+        self.last_executed = None
+        self.ignore_waiting_calls_timeout: timedelta = (
+            None
+            if ignore_waiting_calls_timeout is None
+            else (
+                ignore_waiting_calls_timeout
+                if isinstance(ignore_waiting_calls_timeout, timedelta)
+                else timedelta(ignore_waiting_calls_timeout)
+            )
+        )
 
         if isinstance(on_error, str):
             assert parent is not None, ValueError("Cannot assign on_error as string to a non class method")
@@ -137,7 +149,13 @@ class CollectExecutionCallsContext:
         self.was_triggered = False
         if self.is_waiting_on_call:
             self.is_waiting_on_call = False
-            self.execute_as_task()
+            elapsed = None if self.last_executed is None else datetime.now() - self.last_executed
+            if (
+                self.ignore_waiting_calls_timeout is None
+                or elapsed is None
+                or (self.ignore_waiting_calls_timeout <= elapsed)
+            ):
+                self.execute_as_task()
 
     def on_error(self, ex):
         if self.invoke_error is not None:
@@ -146,6 +164,7 @@ class CollectExecutionCallsContext:
 
     def execute_as_task(self, *args):
         self.was_triggered = True
+        self.last_executed = datetime.now()
         if self.parent is not None:
             self.task.start(self.parent)
         else:
@@ -155,6 +174,7 @@ class CollectExecutionCallsContext:
 def collect_consecutive_calls_async(
     on_error=None,
     use_daemon_thread: bool = True,
+    ignore_waiting_calls_timeout: Union[timedelta, float] = None,
 ):
     """DECORATOR
 
@@ -165,9 +185,15 @@ def collect_consecutive_calls_async(
     on_error can be a method or string, if string, and this is a method of a class,
     the collection will expect, (on_error='call_error')
 
+    NOTE: The underlining method will be called twice. Once for the first call and once
+    for the last. To adjust this, you can set a value to ignore_waiting_calls_timeout parameter.
+    Use with care.
+
     Args:
         on_error (str, optional): The method to call on errors (if a class is calling). Defaults to None.
         use_daemon_thread (bool): If true, use a daemon thread for the process. Defaults to true
+        ignore_waiting_calls_timeout (Union[float, timedelta], optional): ignore waiting calls
+            if they are within the timedelta.
 
     class o:
         def call_error(self,ex):
@@ -192,6 +218,7 @@ def collect_consecutive_calls_async(
                 fun,
                 on_error=on_error,
                 use_daemon_thread=use_daemon_thread,
+                ignore_waiting_calls_timeout=ignore_waiting_calls_timeout,
             ),
             collect_execution_calls,
             source_decorator=collect_consecutive_calls_async,
@@ -206,7 +233,7 @@ def __calculate_delayed_calls_async_sleep_interval(interval: float, elapsed: flo
 
 def collect_delayed_calls_async(
     interval: Union[timedelta, float] = 0.2,
-    max_delay: Union[timedelta, float] = 1,
+    max_delay: Union[timedelta, float] = None,
     on_error: str = None,
     use_daemon_thread: bool = True,
 ):
@@ -226,12 +253,15 @@ def collect_delayed_calls_async(
     Args:
         interval (Union[float, timedelta], optional): The time before invoking the call (will loop in this interval).
             Defaults to 0.2.
-        max_delay (Union[float, timedelta], optional): The maximal time override for successive calls. Defaults to 1.
+        max_delay (Union[float, timedelta], optional): The maximal time override for successive calls.
+            If None defaults to interval*10.
         on_error (str, optional): The method to call on errors (if a class is calling). Defaults to None.
         use_daemon_thread (bool): If true, use a daemon thread for the process. Defaults to true
     """
+    max_delay = max_delay or interval * 10
     interval: timedelta = interval if isinstance(interval, timedelta) else timedelta(seconds=interval)
     max_delay: timedelta = max_delay if isinstance(max_delay, timedelta) else timedelta(seconds=max_delay)
+
     last_checked: datetime = None
     last_total_checked: datetime = None
 
@@ -247,8 +277,9 @@ def collect_delayed_calls_async(
 
     def mark_checked():
         nonlocal last_checked
+        nonlocal last_total_checked
         last_checked = datetime.now()
-        last_max_checked = last_checked
+        last_total_checked = last_checked
 
     def reset():
         nonlocal last_checked
@@ -281,6 +312,7 @@ def collect_delayed_calls_async(
         return collect_consecutive_calls_async(
             on_error=on_error,
             use_daemon_thread=use_daemon_thread,
+            ignore_waiting_calls_timeout=max_delay,
         )(call_method)
 
     return apply_decorator
