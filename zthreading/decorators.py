@@ -117,6 +117,7 @@ class CollectExecutionCallsContext:
         self.is_waiting_on_call = False
         self.was_triggered = False
         self.parent = parent
+        self.invoke_error: Callable = None
 
         if isinstance(on_error, str):
             assert parent is not None, ValueError("Cannot assign on_error as string to a non class method")
