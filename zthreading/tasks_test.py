@@ -173,39 +173,6 @@ def test_common_threaded_task_with_join_exception():
         task.join()
 
 
-class dummytester:
-    def __init__(self, throw_error=False):
-        super().__init__()
-        self.collected_count = 0
-        self.throw_error = throw_error
-        self.last_error = None
-
-    @decorators.collect_consecutive_calls_async("async_error")
-    def collected(self):
-        time.sleep(0.01)
-        if self.throw_error:
-            raise Exception("test")
-        self.collected_count += 1
-
-    def async_error(self, err):
-        self.last_error = err
-
-
-def test_collect_consecutive_calls_async():
-    tester = dummytester()
-    for i in range(0, 100):
-        tester.collected()
-    time.sleep(0.1)
-    assert tester.collected_count == 2
-
-
-def test_collect_consecutive_calls_async_exception():
-    tester = dummytester(True)
-    tester.collected()
-
-    time.sleep(0.1)
-
-    assert tester.last_error is not None
 
 
 if __name__ == "__main__":

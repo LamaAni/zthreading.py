@@ -8,6 +8,7 @@ from queue import Empty
 from typing import List, Callable
 
 from zthreading.events import EventHandler, get_active_loop, Event
+from zthreading.exceptions import TaskOperationException
 
 
 def get_asyncio_future_event_loop(task: asyncio.Task):
@@ -54,12 +55,6 @@ def wait_for_future(future: asyncio.Future, timeout: float = None):
         raise last_exception
 
     return future.result()
-
-
-class TaskOperationException(Exception):
-    """A general class for task operation errors."""
-
-    pass
 
 
 class Task(EventHandler):
