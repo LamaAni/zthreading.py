@@ -116,9 +116,9 @@ def test_catch_signal():
     send_signal = Signals.SIGTERM
     executed = False
 
-    @decorators.catch_signal(Signals.SIGTERM)
+    @decorators.catch_signal(send_signal)
     def do_action():
-        raise_signal(Signals.SIGTERM)
+        raise_signal(send_signal)
         nonlocal executed
         executed = True
 
@@ -136,9 +136,9 @@ def test_catch_signal_with_do():
         nonlocal caught
         caught = True
 
-    @decorators.catch_signal(Signals.SIGTERM, do_on_signal=do_on_signal)
+    @decorators.catch_signal(send_signal, do_on_signal=do_on_signal)
     def do_action():
-        raise_signal(Signals.SIGTERM)
+        raise_signal(send_signal)
         nonlocal executed
         executed = True
 
