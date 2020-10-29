@@ -7,6 +7,7 @@ from typing import Callable, Union
 from weakref import WeakKeyDictionary
 from zthreading.tasks import Task, TaskOperationException
 from zthreading.thread_queue import Queue
+from zthreading.signals import signal_action, Signals, SignalsEventHandler
 
 
 class ThreadSafeContextException(TaskOperationException):
@@ -314,6 +315,59 @@ def collect_delayed_calls_async(
             use_daemon_thread=use_daemon_thread,
             ignore_waiting_calls_timeout=max_delay,
         )(call_method)
+
+    return apply_decorator
+
+
+def as_task(
+    use_daemon_thread=True,
+    thread_name: str = None,
+    event_name: str = "done",
+    use_async_loop=None,
+):
+    """Call this method as task. Changes the return value (Like async)
+
+    Args:
+        use_async_loop (bool, optional): If true use an asyncio thread to execute the action otherwise uses
+            the a system thread. Defaults to the environment variable TASKS_DEFAULT_TO_ASYNC_LOOP, or false.
+        use_daemon_thread (bool, optional): If true, and is using system threading, starts the task in daemon mode.
+            Defaults to True.
+        thread_name (str, optional): If using threads, the name of the executing thread.
+            Defaults to a an auto generated name.
+        event_name (str, optional): The name of the event to trigger when the task is done. Defaults to "done",
+            if none, no event will be triggered.
+    """
+
+    def apply_decorator(fun):
+        @wraps(fun)
+        def call_method(*args, **kwargs):
+            task = Task(
+                fun,
+                use_daemon_thread=use_daemon_thread,
+                thread_name=thread_name,
+                event_name=event_name,
+                use_async_loop=use_async_loop,
+            )
+            task.start(*args, **kwargs)
+            return task
+
+        return call_method
+
+    return apply_decorator
+
+
+def catch_signal(signal: Signals, do_on_signal: signal_action = None):
+    def apply_decorator(fun: Callable):
+        @wraps(fun)
+        def call_method(*args, **kwargs):
+            handler = SignalsEventHandler()
+            handler.on(signal, do_on_signal or signal_action)
+            try:
+                fun(*args, **kwargs)
+            finally:
+                handler.clear(signal)
+
+        return call_method
 
     return apply_decorator
 
