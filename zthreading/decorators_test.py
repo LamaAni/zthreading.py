@@ -114,6 +114,20 @@ def test_collect_delayed_calls_async_exception():
 
 def test_catch_signal():
     send_signal = Signals.SIGTERM
+    executed = False
+
+    @decorators.catch_signal(Signals.SIGTERM)
+    def do_action():
+        raise_signal(Signals.SIGTERM)
+        nonlocal executed
+        executed = True
+
+    do_action()
+    assert executed
+
+
+def test_catch_signal_with_do():
+    send_signal = Signals.SIGTERM
     caught = False
     executed = False
 
