@@ -336,6 +336,9 @@ def as_task(
             Defaults to a an auto generated name.
         event_name (str, optional): The name of the event to trigger when the task is done. Defaults to "done",
             if none, no event will be triggered.
+
+    Returns:
+        [Task] - The task executing the method.
     """
 
     def apply_decorator(fun):
