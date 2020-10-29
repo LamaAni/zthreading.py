@@ -44,18 +44,35 @@ Task(run_in_a_different_thread).start("A message from a thread").join()
 ## Decorators
 
 ```python
-from zthreading.decorators import collect_consecutive_calls_async
+from zthreading.decorators import collect_consecutive_calls_async, as_task, catch_signal
+from singal import Signals, raise_signal
+from zthreading.tasks import Task
+
+
+for i in range(1, 20):
+    consecutive_calls_action()
+
+@as_task
+def my_method_as_task(a:int,b:str):
+    print(b+str(a))
+
+my_task:Task = my_method_as_task("a",1)
+my_task.join()
+
+
+@catch_signal(Signals.SIGTERM)
+def my_signal_ignore_method():
+    # will be ignored.
+    raise_signal(Signals.SIGTERM)
 
 
 @collect_consecutive_calls_async()
 def consecutive_calls_action():  # Like save this to file.. for example.
     # should be printed twice, once for the first call, and another for the last call.
     print("consecutive called action")
-
-
-for i in range(1, 20):
-    consecutive_calls_action()
 ```
+
+See decorator help for more
 
 # Environment variables
 
