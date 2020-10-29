@@ -1,6 +1,9 @@
 import pytest
 import time
 from zthreading import decorators
+from zthreading.tasks import Task
+from zthreading.signals import Signals
+from signal import raise_signal
 
 DUMMY_TESTER_DELAY_INTERVAL = 0.01
 DUMMY_TESTER_DELAY_SHOULD_COMPLETE_WITHIN = DUMMY_TESTER_DELAY_INTERVAL * 10
@@ -40,6 +43,20 @@ class dummytester:
 
     def async_error(self, err):
         self.last_error = err
+
+
+def test_as_task():
+    was_set = False
+
+    @decorators.as_task()
+    def as_task():
+        nonlocal was_set
+        time.sleep(0.01)
+        assert was_set, "Task called before the value"
+
+    t: Task = as_task()
+    was_set = True
+    t.join()
 
 
 def test_collect_consecutive_calls_async():
@@ -93,6 +110,40 @@ def test_collect_delayed_calls_async_exception():
     time.sleep(DUMMY_TESTER_DELAY_SHOULD_COMPLETE_WITHIN)
 
     assert tester.last_error is not None
+
+
+def test_catch_signal():
+    send_signal = Signals.SIGTERM
+    executed = False
+
+    @decorators.catch_signal(send_signal)
+    def do_action():
+        raise_signal(send_signal)
+        nonlocal executed
+        executed = True
+
+    do_action()
+    assert executed
+
+
+def test_catch_signal_with_do():
+    send_signal = Signals.SIGTERM
+    caught = False
+    executed = False
+
+    def do_on_signal(signal: Signals, frame):
+        assert signal == send_signal, "Invalid signal caught"
+        nonlocal caught
+        caught = True
+
+    @decorators.catch_signal(send_signal, do_on_signal=do_on_signal)
+    def do_action():
+        raise_signal(send_signal)
+        nonlocal executed
+        executed = True
+
+    do_action()
+    assert caught and executed
 
 
 if __name__ == "__main__":

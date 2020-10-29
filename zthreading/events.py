@@ -114,8 +114,11 @@ class EventHandler:
             int|List[int] -- The event index, within the specific name
                 dictionary. name+index are unique.
         """
+        self._on(name=name, action=action)
+
+    def _on(self, name: str, action: Callable) -> int:
         if isinstance(name, list):
-            return [self.on(n, action) for n in name]
+            return [self._on(n, action) for n in name]
 
         if isinstance(name, Enum):
             name = str(name)
@@ -166,6 +169,9 @@ class EventHandler:
         Returns:
             bool - If all clear events succeded.
         """
+        self._clear(name, idx)
+
+    def _clear(self, name: str, idx: int = None):
         if isinstance(name, list):
             return all([self.clear(n, idx) for n in name])
 
