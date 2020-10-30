@@ -366,7 +366,7 @@ def catch_signal(signal: Signals, do_on_signal: signal_action = None):
             handler = SignalsEventHandler()
             handler.on(signal, do_on_signal or signal_action)
             try:
-                fun(*args, **kwargs)
+                return fun(*args, **kwargs)
             finally:
                 handler.clear(signal)
 
