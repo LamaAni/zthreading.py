@@ -141,8 +141,9 @@ def test_catch_signal_with_do():
         raise_signal(send_signal)
         nonlocal executed
         executed = True
+        return 1
 
-    do_action()
+    assert do_action()==1
     assert caught and executed
 
 
