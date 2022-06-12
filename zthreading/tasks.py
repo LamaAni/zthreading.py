@@ -250,7 +250,7 @@ class Task(EventHandler):
             if self.use_async_loop:
                 wait_for_future(self.async_task, timeout)
             # FIXME: Maybe there is a better approach here. Should raise error?
-            elif self._thread.is_alive() and threading.currentThread() != self._thread:
+            elif self._thread.is_alive() and threading.current_thread() != self._thread:
                 self._thread.join(timeout)
 
         if raise_last_exception and self.error is not None:
