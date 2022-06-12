@@ -5,6 +5,8 @@ name: Upload Python Package
 on:
   release:
     types: [created]
+  pull_request: {}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -30,10 +32,15 @@ jobs:
           pytest ./zthreading
         env:
           GITHUB_BRANCH: ${{ github.ref }}
-      - name: Build and publish
+
+      - name: Build
+        run: |
+          python setup.py sdist bdist_wheel
+
+      - name: Publish
+        if: github.event_name == 'release'
         env:
           TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
         run: |
-          python setup.py sdist bdist_wheel
           twine upload dist/*
