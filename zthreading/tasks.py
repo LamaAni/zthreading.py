@@ -46,7 +46,10 @@ def wait_for_future(future: asyncio.Future, timeout: float = None):
         loop = get_asyncio_future_event_loop(future)
 
     if timeout is not None:
-        future = asyncio.wait_for(future, timeout=timeout, loop=loop)
+        if sys.version_info.minor<10:
+            future = asyncio.wait_for(future, timeout=timeout, loop=loop)
+        else:
+            future = asyncio.wait_for(future, timeout=timeout)
 
     loop.run_until_complete(future)
 
