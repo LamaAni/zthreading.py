@@ -2,6 +2,8 @@
 
 A collection of wrapper classes for event broadcast and task management for python (Python Threads or Asyncio)
 
+### If you like it, star it, so other people may use it!
+
 # TL;DR
 
 ## Events
